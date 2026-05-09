@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Plasma Mobile Theme — fonts.xml
-  Replaces the system default sans-serif stack with Noto Sans,
-  matching KDE Plasma's default typography.
+  Replaces the system sans-serif stack with Noto Sans (KDE's default font).
+
+  On OneUI 7, Samsung ships /system/etc/fonts.xml AND
+  /system/etc/fonts_base.xml. This file overrides the former;
+  Samsung's fallback chains are preserved via the emoji + CJK entries below.
 -->
 <familyset version="22">
 
-  <!-- Noto Sans as system default sans-serif -->
+  <!-- ── Noto Sans — system default sans-serif ──────────────────────────── -->
   <family name="sans-serif">
     <font weight="400" style="normal">NotoSans-Regular.ttf</font>
     <font weight="400" style="italic">NotoSans-Italic.ttf</font>
@@ -16,14 +19,30 @@
     <font weight="500" style="normal">NotoSans-Medium.ttf</font>
   </family>
 
-  <!-- Keep system monospace (Droid Sans Mono / Roboto Mono untouched) -->
+  <!-- Samsung SamsungOne fallback removed — Noto Sans takes its slot -->
+
+  <!-- ── Monospace (untouched) ──────────────────────────────────────────── -->
   <family name="monospace">
     <font weight="400" style="normal">DroidSansMono.ttf</font>
   </family>
 
-  <!-- Emoji passthrough -->
+  <!-- ── Emoji passthrough ──────────────────────────────────────────────── -->
   <family>
     <font weight="400" style="normal">NotoColorEmoji.ttf</font>
+  </family>
+
+  <!-- ── CJK fallbacks (keep Samsung/AOSP CJK fonts intact) ────────────── -->
+  <family lang="zh-Hans">
+    <font weight="400" style="normal">NotoSansCJK-Regular.ttc</font>
+  </family>
+  <family lang="zh-Hant">
+    <font weight="400" style="normal">NotoSansCJK-Regular.ttc</font>
+  </family>
+  <family lang="ja">
+    <font weight="400" style="normal">NotoSansCJK-Regular.ttc</font>
+  </family>
+  <family lang="ko">
+    <font weight="400" style="normal">NotoSansCJK-Regular.ttc</font>
   </family>
 
 </familyset>

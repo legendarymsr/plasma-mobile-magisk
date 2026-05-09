@@ -1,12 +1,21 @@
 # ── Plasma Mobile Theme — system.prop ────────────────────────────────────────
-# Breeze Blue accent (#3DAEE9)
+
+# Breeze Blue accent (AOSP ROMs)
 persist.sys.theme.accentcolor=3DAEE9
 
-# Force dark mode system-wide
+# Force dark mode (AOSP)
 persist.sys.ui.nightmode=2
 
-# Disable vendor overlay so our fonts take priority
+# Font family hint (AOSP ROMs that read this prop)
 persist.sys.font_family=NotoSans
 
-# Breeze-inspired rounded corners (pixels; OEM-specific, harmless if ignored)
+# Rounded corners — Breeze uses ~28dp; harmless on devices that ignore it
 ro.config.device_corner_radius=28
+
+# ── Samsung / OneUI 7 props ───────────────────────────────────────────────────
+# Suppress OneUI's automatic wallpaper-based color re-derivation so our
+# manually set palette index (Blue/8) sticks across reboots.
+persist.sys.samsung.color_palette_lock=1
+
+# Disable Samsung's font-picker enforcement so our system/fonts TTFs load
+persist.sys.samsung.font_lock=0
