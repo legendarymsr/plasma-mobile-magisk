@@ -1,16 +1,29 @@
 #!/sbin/sh
-# Runs at every boot (late_start service).
-# Mounts a tmpfs over /data/plasma-mobile/tmp and ensures
-# proot's fake /proc is writable — nothing heavy runs here.
+# Runs every boot (late_start service stage — system is up, settings DB writable).
+# Applies Plasma Mobile / Breeze theme settings that need a live system.
 
-PLASMA_DIR=/data/plasma-mobile
+# ── dark mode ─────────────────────────────────────────────────────────────────
+settings put global ui_night_mode 2           # force dark
+settings put secure ui_night_mode 2
 
-mkdir -p "$PLASMA_DIR/tmp"
-mount -t tmpfs tmpfs "$PLASMA_DIR/tmp" -o size=256m,mode=1777 2>/dev/null
+# ── Breeze Blue accent (#3DAEE9 = 0xFF3DAEE9) ─────────────────────────────────
+# Works on AOSP-derived ROMs (Pixel, LineageOS, crDroid, EvolutionX, etc.)
+settings put system accent_color -12529943   # 0xFF3DAEE9 as signed int32
 
-# Ensure the rootfs bind-mounts survive across boots
-if [ -d "$PLASMA_DIR/rootfs/etc" ]; then
-  # keep /dev/shm available inside the container
-  mkdir -p "$PLASMA_DIR/rootfs/dev/shm"
-  mount --bind /dev/shm "$PLASMA_DIR/rootfs/dev/shm" 2>/dev/null
+# ── icon shape: squircle (closest to Plasma's default) ───────────────────────
+settings put secure icon_shape_overlay_pkg_path squircle
+
+# ── font scale — Plasma defaults to slightly larger body text ─────────────────
+settings put system font_scale 1.05
+
+# ── status bar — hide the clock on the left, keep it centre (Plasma style) ───
+settings put secure status_bar_clock 1        # 0=left 1=centre 2=right
+
+# ── edge-to-edge gestures (Plasma Mobile has no HW keys) ─────────────────────
+settings put secure navigation_mode 2         # gesture navigation
+
+# ── wallpaper: set the staged system wallpaper if present ────────────────────
+WALL=/system/media/default_wallpaper.jpg
+if [ -f "$WALL" ]; then
+  cmd wallpaper set-wallpaper --file "$WALL" --which both 2>/dev/null
 fi

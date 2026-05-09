@@ -1,0 +1,12 @@
+# ── Plasma Mobile Theme — system.prop ────────────────────────────────────────
+# Breeze Blue accent (#3DAEE9)
+persist.sys.theme.accentcolor=3DAEE9
+
+# Force dark mode system-wide
+persist.sys.ui.nightmode=2
+
+# Disable vendor overlay so our fonts take priority
+persist.sys.font_family=NotoSans
+
+# Breeze-inspired rounded corners (pixels; OEM-specific, harmless if ignored)
+ro.config.device_corner_radius=28

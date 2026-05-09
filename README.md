@@ -1,74 +1,54 @@
-# plasma-mobile-magisk
+# plasma-mobile-theme
 
-A Magisk module that runs [KDE Plasma Mobile](https://invent.kde.org/plasma/plasma-mobile) on Android using an Alpine Linux proot container rendered through [termux-x11](https://github.com/termux/termux-x11).
+A Magisk module that skins Android to match [KDE Plasma Mobile](https://invent.kde.org/plasma/plasma-mobile).
 
-## How it works
+No containers, no Linux chroot — pure Android theming via system overlays and boot-time settings.
 
-```
-Android (Magisk root)
- └── proot
-      └── Alpine Linux (edge)
-           └── KWin (Wayland compositor)
-                └── plasmashell (Plasma Mobile)
-                     └── rendered via termux-x11 Wayland socket
-```
+## What it applies
 
-The module does not bundle a rootfs — it is downloaded and assembled during first-time setup so the ZIP stays small and the rootfs is always fresh from Alpine's edge repos.
+| Layer | Detail |
+|---|---|
+| **Accent color** | Breeze Blue `#3DAEE9` |
+| **Dark mode** | Forced system-wide |
+| **Font** | Noto Sans (KDE's default UI font) replaces Roboto |
+| **Wallpapers** | MilkyWay, Volna, Next — pulled from KDE's CDN at flash time |
+| **Icon shape** | Squircle (closest to Plasma's app icon style) |
+| **Navigation** | Gesture mode (Plasma Mobile has no hardware keys) |
+| **Status bar clock** | Centred |
+| **Font scale** | 1.05× (Plasma's slightly larger body text) |
+
+Settings are applied via `service.sh` on every boot so they survive app resets.  
+Fonts and wallpapers land on `/system` via Magisk's overlay — no system partition write.
 
 ## Requirements
 
-- Android device with Magisk v20.4+
-- [termux-x11](https://github.com/termux/termux-x11) installed and running
-- [Termux](https://termux.dev) installed (`proot`, `curl`, `tar` packages)
-- ~2 GB free space in `/data`
-- ARM64, ARM32, or x86_64 device
+- Magisk v20.4+ (or KernelSU with OverlayFS support)
+- AOSP-based ROM (Pixel, LineageOS, crDroid, EvolutionX, etc.)
+- Internet access during flash (for font + wallpaper download)
 
 ## Installation
 
-1. Flash `plasma-mobile-v*.zip` in Magisk / KernelSU manager.
-2. Reboot.
-3. Open Termux and run first-time setup:
-
-```sh
-su -c plasma-setup
-```
-
-This downloads Alpine Linux edge and installs all KDE packages (~800 MB).
-
-## Usage
-
-Start termux-x11, then in Termux:
-
-```sh
-su -c plasma-mobile
-```
-
-Plasma Mobile will appear in the termux-x11 window.
-
-## Included KDE packages
-
-| Package | Role |
-|---|---|
-| `kwin` | Wayland compositor |
-| `plasma-mobile` | Mobile shell |
-| `plasma-dialer` | Phone / dialer UI |
-| `spacebar` | SMS app |
-| `tokodon` | Mastodon client |
-| `neochat` | Matrix client |
-| `kirigami` | QML UI framework |
-
-## Directory layout
+Flash in Magisk Manager or via recovery:
 
 ```
-/data/plasma-mobile/
-├── rootfs/     Alpine root filesystem
-├── home/       Persistent home for the container user
-└── tmp/        tmpfs (re-mounted each boot)
+adb sideload plasma-mobile-theme-v1.0.0.zip
 ```
 
-## Building the ZIP yourself
+Reboot. Done.
+
+## Building the ZIP
 
 ```sh
 cd plasma-mobile-magisk
-zip -r ../plasma-mobile-v1.0.0.zip . -x '*.git*' -x 'README.md'
+zip -r9 ../plasma-mobile-theme-v1.0.0.zip . -x '*.git*'
 ```
+
+## Palette reference
+
+| Token | Hex | Usage |
+|---|---|---|
+| Breeze Blue | `#3DAEE9` | Accent, links, active elements |
+| Midnight | `#1B2430` | Dark background |
+| Paper | `#EFF0F1` | Light background |
+| Foreground | `#FCFCFC` | Primary text (dark theme) |
+| Subtle | `#7F8C8D` | Secondary text |

@@ -1,7 +1,7 @@
-id=plasma-mobile
-name=Plasma Mobile
+id=plasma-mobile-theme
+name=Plasma Mobile Theme
 version=v1.0.0
 versionCode=1
 author=legendarymsr
-description=KDE Plasma Mobile shell on Android via Alpine Linux proot + termux-x11
+description=KDE Plasma Mobile theme for Android — Breeze colors, Noto Sans, Plasma wallpapers, dark mode
 updateJson=https://raw.githubusercontent.com/legendarymsr/plasma-mobile-magisk/master/update.json
