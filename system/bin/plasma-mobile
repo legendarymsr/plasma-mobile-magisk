@@ -1,0 +1,43 @@
+#!/bin/sh
+# Launches KDE Plasma Mobile inside the Alpine proot container,
+# rendering via termux-x11 / Wayland socket forwarded to Android.
+
+PLASMA_DIR=/data/plasma-mobile
+ROOTFS="$PLASMA_DIR/rootfs"
+
+if [ "$(id -u)" != "0" ]; then
+  echo "Run as root: su -c plasma-mobile"
+  exit 1
+fi
+
+if [ ! -d "$ROOTFS/usr" ]; then
+  echo "Rootfs not found. Run 'plasma-setup' first."
+  exit 1
+fi
+
+if ! command -v proot >/dev/null 2>&1; then
+  echo "ERROR: proot not found. Run: pkg install proot"
+  exit 1
+fi
+
+# ── termux-x11 Wayland socket ─────────────────────────────────────────────────
+# termux-x11 exposes a Wayland socket at $XDG_RUNTIME_DIR/wayland-0 on the host.
+# We bind-mount the host runtime dir into the container so KWin can reach it.
+HOST_XDG="${XDG_RUNTIME_DIR:-/data/data/com.termux/files/usr/tmp}"
+CONTAINER_XDG=/run/user/0
+
+echo "[plasma-mobile] Starting Plasma Mobile..."
+echo "  Display: WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}"
+
+proot \
+  --rootfs="$ROOTFS" \
+  --bind=/dev \
+  --bind=/proc \
+  --bind=/sys \
+  --bind=/dev/shm \
+  --bind="$PLASMA_DIR/home:/root" \
+  --bind="$PLASMA_DIR/tmp:/tmp" \
+  --bind="$HOST_XDG:$CONTAINER_XDG" \
+  --change-id=0:0 \
+  --kill-on-exit \
+  /usr/local/bin/start-plasma

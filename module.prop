@@ -1,0 +1,7 @@
+id=plasma-mobile
+name=Plasma Mobile
+version=v1.0.0
+versionCode=1
+author=legendarymsr
+description=KDE Plasma Mobile shell on Android via Alpine Linux proot + termux-x11
+updateJson=https://raw.githubusercontent.com/legendarymsr/plasma-mobile-magisk/master/update.json

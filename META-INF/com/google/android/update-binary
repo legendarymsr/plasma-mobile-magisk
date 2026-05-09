@@ -1,0 +1,29 @@
+#!/sbin/sh
+# Magisk Module Installer — Plasma Mobile
+# update-binary is the entry point Magisk calls during flash
+
+SKIPUNZIP=1
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+ui_print() { echo "$1"; }
+abort()     { ui_print "ERROR: $1"; exit 1; }
+
+require_new_magisk() {
+  ui_print "! Please update Magisk to v20.4+"
+  exit 1
+}
+
+# ── version gate ─────────────────────────────────────────────────────────────
+[ "$MAGISK_VER_CODE" -lt 20400 ] 2>/dev/null && require_new_magisk
+
+# ── unpack this zip into $MODPATH ─────────────────────────────────────────────
+ui_print "- Installing Plasma Mobile Magisk Module"
+unzip -o "$ZIPFILE" -x 'META-INF/*' -d "$MODPATH" >&2
+
+# ── set permissions ───────────────────────────────────────────────────────────
+set_perm_recursive "$MODPATH/system/bin" root shell 0755 0755
+set_perm_recursive "$MODPATH/common"     root root  0755 0755
+
+ui_print "- Module installed."
+ui_print "  Run: plasma-setup   (first time only)"
+ui_print "  Run: plasma-mobile  (to launch the shell)"

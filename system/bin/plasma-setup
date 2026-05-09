@@ -1,0 +1,23 @@
+#!/bin/sh
+# One-time setup: bootstraps the Alpine Linux rootfs with Plasma Mobile.
+# Must be run as root (via `su`) before first launch.
+
+MODDIR=/data/adb/modules/plasma-mobile
+
+if [ "$(id -u)" != "0" ]; then
+  echo "Run as root: su -c plasma-setup"
+  exit 1
+fi
+
+# Install proot if Termux is available and proot isn't in PATH
+if ! command -v proot >/dev/null 2>&1; then
+  if command -v pkg >/dev/null 2>&1; then
+    echo "[plasma-setup] Installing proot via Termux..."
+    pkg install -y proot curl tar
+  else
+    echo "ERROR: proot not found. Install Termux and run: pkg install proot curl"
+    exit 1
+  fi
+fi
+
+exec sh "$MODDIR/common/rootfs-setup.sh"
