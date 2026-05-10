@@ -197,8 +197,29 @@ _plasma_install() {
   log "Plasma APK not found at any expected path"
 }
 
+_suppress_stock_launchers() {
+  # On Samsung One UI, the stock launcher aggressively reclaims the HOME role
+  # on each boot unless we suppress it. pm disable-user stops it from running
+  # while keeping it recoverable (re-enable via Settings if needed).
+  if $IS_SAMSUNG; then
+    for pkg in com.sec.android.app.launcher com.samsung.android.app.aodservice; do
+      pm disable-user --user 0 "$pkg" 2>/dev/null \
+        && log "suppressed: $pkg" || log "suppress skipped: $pkg"
+    done
+  fi
+  # AOSP / Pixel launchers
+  for pkg in com.android.launcher3 com.google.android.apps.nexuslauncher; do
+    pm list packages 2>/dev/null | grep -q "^package:${pkg}$" || continue
+    pm disable-user --user 0 "$pkg" 2>/dev/null \
+      && log "suppressed: $pkg" || true
+  done
+}
+
 _plasma_set_home() {
   local full_act="${PLASMA_PKG}/msr.plasma.LauncherActivity"
+
+  # Suppress competing launchers so they can't reclaim the HOME role on reboot
+  _suppress_stock_launchers
 
   # Android <10: preferred-activities mechanism
   pm set-home-activity "$full_act" 2>/dev/null \
