@@ -1,6 +1,6 @@
 #!/sbin/sh
 # Plasma Mobile Theme — service.sh
-# Runs post-boot. Downloads missing assets, installs KDE apps, applies Breeze Dark.
+# Runs post-boot. Downloads assets, installs KDE apps, applies Breeze Dark.
 
 LOG=/data/local/tmp/plasma-theme.log
 log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
@@ -9,7 +9,7 @@ log "--- plasma-mobile-theme service.sh started ---"
 i=0
 until [ "$(getprop sys.boot_completed)" = "1" ]; do
   sleep 3; i=$((i+1))
-  [ $i -gt 60 ] && log "timed out" && exit 1
+  [ $i -gt 60 ] && log "timed out waiting for boot" && exit 1
 done
 log "boot completed — sleeping 15s"
 sleep 15
@@ -21,13 +21,23 @@ WALLS_DIR="$MODDIR/system/media/wallpapers"
 ONEUI_VER=$(getprop ro.build.version.oneui 2>/dev/null)
 IS_SAMSUNG=false; [ -n "$ONEUI_VER" ] && IS_SAMSUNG=true
 ANDROID_VER=$(getprop ro.build.version.sdk 2>/dev/null)
-log "OneUI=$ONEUI_VER IS_SAMSUNG=$IS_SAMSUNG SDK=$ANDROID_VER"
+log "OneUI=$ONEUI_VER IS_SAMSUNG=$IS_SAMSUNG SDK=$ANDROID_VER MODDIR=$MODDIR"
 
 # ── Download helpers ──────────────────────────────────────────────────────────
 try_dl() {
   local url="$1" dest="$2"
   command -v curl >/dev/null 2>&1 && { curl -fsSL --connect-timeout 20 -o "$dest" "$url" && return 0; }
   command -v wget >/dev/null 2>&1 && { wget -qO "$dest" --timeout=20 "$url" && return 0; }
+  return 1
+}
+
+dl_first() {
+  local dest="$1"; shift
+  [ -f "$dest" ] && [ -s "$dest" ] && return 0
+  for url in "$@"; do
+    try_dl "$url" "$dest" && return 0
+    rm -f "$dest"
+  done
   return 1
 }
 
@@ -46,26 +56,44 @@ sp() { settings put --user 0 "$1" "$2" "$3" 2>/dev/null || settings put "$1" "$2
 
 # ── Download missing fonts ────────────────────────────────────────────────────
 mkdir -p "$FONTS_DIR"
-BASE="https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoSans"
+FONT_BASE="https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoSans"
 for v in Regular Bold Italic BoldItalic Light Medium SemiBold; do
   f="$FONTS_DIR/NotoSans-${v}.ttf"
   [ -f "$f" ] && [ -s "$f" ] && continue
-  try_dl "${BASE}/NotoSans-${v}.ttf" "$f" \
+  try_dl "${FONT_BASE}/NotoSans-${v}.ttf" "$f" \
     && log "font ${v}: ok" || log "font ${v}: FAILED"
 done
 
-# ── Download missing wallpapers ───────────────────────────────────────────────
+# ── Download missing wallpapers (multiple source fallback) ──────────────────
 mkdir -p "$WALLS_DIR"
-W="https://cdn.kde.org/wallpapers"
+KDE_CDN="https://cdn.kde.org/wallpapers"
+KDE_GH="https://raw.githubusercontent.com/KDE/plasma-workspace-wallpapers/master"
+
 dl_wall() {
-  local name="$1" url="$2" dest="$WALLS_DIR/plasma-${1}.jpg"
-  [ -f "$dest" ] && [ -s "$dest" ] && return 0
-  try_dl "$url" "$dest" && log "wall $name: ok" || log "wall $name: FAILED"
+  local name="$1"; shift
+  local dest="$WALLS_DIR/plasma-${name}.jpg"
+  dl_first "$dest" "$@" \
+    && log "wall $name: ok" || log "wall $name: FAILED"
 }
-dl_wall "milkyway"    "$W/MilkyWay/contents/images/3840x2160.jpg"
-dl_wall "volna"       "$W/Volna/contents/images/3840x2160.jpg"
-dl_wall "next"        "$W/Next/contents/images/3840x2160.jpg"
-dl_wall "eveningglow" "$W/EveningGlow/contents/images/3840x2160.jpg"
+
+dl_wall "next" \
+  "$KDE_CDN/Next/contents/images/3840x2160.jpg" \
+  "$KDE_GH/Next/contents/images/3840x2160.png" \
+  "$KDE_GH/Next/contents/images/3840x2160.jpg"
+
+dl_wall "volna" \
+  "$KDE_CDN/Volna/contents/images/3840x2160.jpg" \
+  "$KDE_GH/Volna/contents/images/3840x2160.jpg" \
+  "$KDE_GH/Volna/contents/images/3840x2160.png"
+
+dl_wall "milkyway" \
+  "$KDE_CDN/MilkyWay/contents/images/3840x2160.jpg" \
+  "$KDE_GH/MilkyWay/contents/images/3840x2160.jpg" \
+  "$KDE_GH/MilkyWay/contents/images/5120x2880.jpg"
+
+dl_wall "eveningglow" \
+  "$KDE_CDN/EveningGlow/contents/images/3840x2160.jpg" \
+  "$KDE_GH/EveningGlow/contents/images/3840x2160.jpg"
 
 for f in "$WALLS_DIR"/*.jpg; do
   [ -f "$f" ] && [ -s "$f" ] || continue
@@ -74,15 +102,14 @@ for f in "$WALLS_DIR"/*.jpg; do
   break
 done
 
-# ── Install KDE apps (dynamic F-Droid version via API) ───────────────────────
+# ── Install KDE apps via F-Droid API ────────────────────────────────────────
 install_fdroid_app() {
   local pkg="$1" label="$2"
   if pm list packages 2>/dev/null | grep -q "^package:${pkg}$"; then
-    log "$label: already installed"
-    return 0
+    log "$label: already installed"; return 0
   fi
   local url apk_tmp="/data/local/tmp/${pkg}.apk"
-  url=$(fdroid_url "$pkg") || { log "$label: F-Droid API unavailable"; return 1; }
+  url=$(fdroid_url "$pkg") || { log "$label: F-Droid API failed"; return 1; }
   try_dl "$url" "$apk_tmp" || { log "$label: download failed"; return 1; }
   pm install -r "$apk_tmp" 2>/dev/null \
     && log "$label: installed" || log "$label: install FAILED"
@@ -93,7 +120,7 @@ install_fdroid_app "org.kde.kdeconnect_tp" "KDE Connect"
 install_fdroid_app "org.kde.kasts"          "Kasts"
 install_fdroid_app "net.gsantner.markor"    "Markor"
 
-# ── Apply Breeze Dark theme settings ─────────────────────────────────────────
+# ── Apply Breeze Dark settings ────────────────────────────────────────────
 cmd uimode night yes                        && log "uimode night: ok"       || log "uimode night: FAILED"
 sp global dark_theme 1                      && log "dark_theme: ok"         || log "dark_theme: FAILED"
 sp system darkness_enabled 1                && log "darkness: ok"           || log "darkness: FAILED"
@@ -103,7 +130,7 @@ if $IS_SAMSUNG; then
   sp secure color_preference 8              && log "samsung accent: ok"     || log "samsung accent: FAILED"
   sp system theme_background_color 0        && log "bg color: ok"           || log "bg color: FAILED"
 else
-  sp system accent_color -12529943          && log "accent Breeze Blue: ok" || log "accent: FAILED"
+  sp system accent_color -12529943          && log "accent: ok"             || log "accent: FAILED"
 fi
 
 sp system font_scale 1.0                    && log "font_scale: ok"         || log "font_scale: FAILED"
@@ -122,12 +149,10 @@ else
   log "icon shape attempted"
 fi
 
-sp system status_bar_clock 1                && log "status clock: ok"       || log "status clock: FAILED"
 sp system status_bar_show_battery_percent 1 && log "battery pct: ok"       || log "battery pct: FAILED"
-sp global heads_up_notifications_enabled 1  && log "heads-up: ok"          || log "heads-up: FAILED"
-sp global window_animation_scale 0.8        && log "anim window: ok"        || log "anim window: FAILED"
-sp global transition_animation_scale 0.8    && log "anim trans: ok"         || log "anim trans: FAILED"
-sp global animator_duration_scale 0.8       && log "anim dur: ok"           || log "anim dur: FAILED"
+sp global window_animation_scale 0.8        && log "anim: ok"               || log "anim: FAILED"
+sp global transition_animation_scale 0.8
+sp global animator_duration_scale 0.8
 
 # ── Apply wallpaper ───────────────────────────────────────────────────────────
 WALL="$MODDIR/system/media/default_wallpaper.jpg"
@@ -148,41 +173,53 @@ if [ -f "$WALL" ] && [ -s "$WALL" ]; then
     cmd wallpaper set-wallpaper --file "$WALL" --which both 2>/dev/null \
       && log "wallpaper set: ok" || log "wallpaper set: FAILED"
   fi
+else
+  log "wallpaper: no file found"
 fi
 
-# ── Set Plasma Mobile as default launcher ────────────────────────────────────
-sleep 5
+# ── Ensure Plasma launcher is installed ────────────────────────────────────
 PLASMA_PKG="msr.plasma"
 PLASMA_ACT="${PLASMA_PKG}/.LauncherActivity"
 
-# Wait up to 30s for package manager to see the priv-app
+if ! pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
+  log "Plasma not in package list — trying explicit install"
+  for apk in \
+    /system/priv-app/PlasmaLauncher/PlasmaLauncher.apk \
+    "$MODDIR/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk"; do
+    [ -f "$apk" ] || continue
+    pm install -r --user 0 "$apk" 2>/dev/null \
+      && log "Plasma APK installed from $apk" \
+      || log "Plasma APK install FAILED from $apk"
+    break
+  done
+fi
+
+sleep 5
 k=0
 while ! pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; do
   sleep 2; k=$((k+1)); [ $k -gt 15 ] && break
 done
 
 if pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
-  log "Plasma launcher found"
-  # Method 1: pm set-home-activity (Android ≤10)
+  log "Plasma launcher found in package list"
   pm set-home-activity "$PLASMA_ACT" 2>/dev/null \
     && log "home: pm ok" || log "home: pm FAILED"
-  # Method 2: pm set-home-activity --user 0 (some Android 11+ builds)
   pm set-home-activity --user 0 "$PLASMA_ACT" 2>/dev/null && log "home: pm-user ok" || true
-  # Method 3: Role API (Android 10+ with root)
   cmd role add-role-holder android.app.role.HOME "$PLASMA_PKG" 0 2>/dev/null \
     && log "home: role ok" || log "home: role FAILED"
-  # Method 4: secure settings
   settings put secure default_home_package_name "$PLASMA_PKG" 2>/dev/null \
     && log "home: settings ok" || true
-  log "If launcher didn't switch: Settings -> Apps -> Default apps -> Home app -> Plasma Mobile"
+  log "Manual: Settings -> Apps -> Default apps -> Home app -> Plasma Mobile"
 else
-  log "Plasma launcher NOT in package list — may need a second reboot"
+  log "Plasma launcher still NOT found — APK may be rejected (check signing)"
 fi
 
-# ── Auto-start KDE Connect if installed ──────────────────────────────────────
 if pm list packages 2>/dev/null | grep -q "org.kde.kdeconnect_tp"; then
   am startservice -n org.kde.kdeconnect_tp/.core.NetworkPacketFetcherProvider 2>/dev/null \
     && log "KDE Connect started" || log "KDE Connect: FAILED"
 fi
+
+mkdir -p /sdcard/Download 2>/dev/null
+cp "$LOG" /sdcard/Download/plasma-theme.log 2>/dev/null && log "log copied to /sdcard/Download/"
 
 log "--- done ---"

@@ -12,6 +12,7 @@ zip -r9 "$OUT" \
   module.prop \
   customize.sh \
   service.sh \
+  action.sh \
   system.prop \
   system
 
