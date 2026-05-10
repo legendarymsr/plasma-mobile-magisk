@@ -43,5 +43,12 @@ for f in "$WALLS_DIR"/*.jpg; do
   break
 done
 
-ui_print "- KDE Connect, Kasts, Markor will auto-install on first boot"
+ui_print ""
+ui_print "- Plasma launcher will be installed as a system app on reboot"
+ui_print "- Default home app will switch automatically after reboot"
+ui_print "- KDE Connect, Kasts, Markor will auto-install ~1 min after boot"
+ui_print ""
+ui_print "  If the launcher does not switch automatically:"
+ui_print "  Settings -> Apps -> Default apps -> Home app -> Plasma Mobile"
+ui_print ""
 ui_print "- Done. Reboot to apply."
