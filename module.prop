@@ -1,7 +1,7 @@
 id=plasma-mobile-theme
 name=Plasma Mobile Theme
-version=v1.0.3
-versionCode=3
+version=v1.0.4
+versionCode=4
 author=legendarymsr
-description=KDE Plasma Mobile theme for Android — Breeze colors, Noto Sans, Plasma wallpapers, OneUI 7 + AOSP
+description=KDE Plasma Mobile theme for Android — Breeze Dark, Noto Sans, KDE apps, Plasma launcher, OneUI 7 + AOSP
 updateJson=https://raw.githubusercontent.com/legendarymsr/plasma-mobile-magisk/master/update.json
