@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - claude/plasma-mobile-magisk-module-tKtUL
   workflow_dispatch:
 
 jobs:
