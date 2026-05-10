@@ -198,14 +198,28 @@ _plasma_install() {
 }
 
 _plasma_set_home() {
-  pm set-home-activity "$PLASMA_ACT" 2>/dev/null \
+  local full_act="${PLASMA_PKG}/msr.plasma.LauncherActivity"
+
+  # Android <10: preferred-activities mechanism
+  pm set-home-activity "$full_act" 2>/dev/null \
     && log "home: pm ok" || log "home: pm FAILED"
-  pm set-home-activity --user 0 "$PLASMA_ACT" 2>/dev/null \
-    && log "home: pm-user ok" || true
+  pm set-home-activity --user 0 "$full_act" 2>/dev/null || true
+
+  # Android 10+: RoleManager (same result as post-fs-data.sh but live)
   cmd role add-role-holder android.app.role.HOME "$PLASMA_PKG" 0 2>/dev/null \
     && log "home: role ok" || log "home: role FAILED"
+
+  # Secure setting fallback
   settings put secure default_home_package_name "$PLASMA_PKG" 2>/dev/null \
     && log "home: settings ok" || true
+
+  # Bring the launcher to front so Android locks it in as current home
+  am start -a android.intent.action.MAIN \
+    -c android.intent.category.HOME \
+    -n "$full_act" \
+    --activity-single-top 2>/dev/null \
+    && log "home: am start ok" || log "home: am start FAILED"
+
   log "If not switched: Settings → Apps → Default apps → Home app → Plasma Mobile"
 }
 

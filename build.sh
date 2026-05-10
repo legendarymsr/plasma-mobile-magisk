@@ -11,6 +11,7 @@ zip -r9 "$OUT" \
   META-INF \
   module.prop \
   customize.sh \
+  post-fs-data.sh \
   service.sh \
   action.sh \
   system.prop \
