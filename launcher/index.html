@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Plasma Mobile</title>
+<style>
+:root{
+  --blue:#3DAEE9;--blue-dim:rgba(61,174,233,.18);--blue-glow:rgba(61,174,233,.35);
+  --bg:#1B2430;--panel:rgba(22,30,42,.82);--card:rgba(36,48,64,.85);
+  --border:rgba(61,174,233,.22);--text:#EFF0F1;--muted:rgba(239,240,241,.52);
+  --r:20px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;font-family:'Noto Sans',system-ui,sans-serif;color:var(--text);background:var(--bg)}
+#wallpaper{position:fixed;inset:0;z-index:0;
+  background:linear-gradient(155deg,#0d1520 0%,#1B2430 50%,#0e1e30 100%)}
+#wallpaper::after{content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse 90% 55% at 65% 25%,rgba(61,174,233,.13) 0%,transparent 70%)}
+#home{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;
+  transition:opacity .32s,transform .32s}
+#home.hidden{opacity:0;pointer-events:none;transform:translateY(-32px)}
+#statusbar{width:100%;display:flex;justify-content:space-between;align-items:center;
+  padding:10px 20px 0;height:42px}
+#sb-time{font-size:13px;font-weight:500}
+#sb-right{display:flex;gap:9px;align-items:center}
+#sb-right svg{width:14px;height:14px;fill:var(--text);opacity:.8}
+#kde-logo{margin-top:28px;opacity:.5}
+#kde-logo svg{width:52px;height:52px}
+#clock-wrap{margin-top:10px;text-align:center}
+#clock{font-size:82px;font-weight:200;letter-spacing:-3px;line-height:1;
+  text-shadow:0 4px 24px rgba(0,0,0,.55)}
+#date-str{font-size:15px;color:var(--muted);margin-top:5px;letter-spacing:.4px}
+#spacer{flex:1}
+#pinned{display:flex;gap:14px;margin:0 16px 10px;
+  padding:14px 20px;background:var(--panel);
+  backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
+  border:1px solid var(--border);border-radius:26px}
+.pin{display:flex;flex-direction:column;align-items:center;gap:5px;
+  padding:10px 12px;border-radius:16px;cursor:pointer;transition:background .15s,transform .1s}
+.pin:active{background:var(--blue-dim);transform:scale(.9)}
+.pin-ic{width:46px;height:46px;border-radius:14px;background:var(--card);
+  border:1px solid var(--border);display:flex;align-items:center;justify-content:center}
+.pin-ic svg{width:24px;height:24px;fill:var(--blue)}
+.pin span{font-size:10px;color:var(--muted)}
+#swipe-hint{display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding-bottom:calc(env(safe-area-inset-bottom,10px)+6px);
+  color:var(--muted);font-size:10px;letter-spacing:.6px;cursor:pointer;
+  animation:bob 2.6s ease-in-out infinite}
+#swipe-hint svg{width:20px;height:20px;fill:var(--muted)}
+@keyframes bob{0%,100%{opacity:.38;transform:translateY(0)}50%{opacity:.8;transform:translateY(-5px)}}
+#drawer{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;
+  background:rgba(11,16,26,.93);backdrop-filter:blur(36px);-webkit-backdrop-filter:blur(36px);
+  transform:translateY(100%);transition:transform .38s cubic-bezier(.32,0,.67,0)}
+#drawer.open{transform:translateY(0);transition:transform .38s cubic-bezier(.33,1,.68,1)}
+#handle{width:40px;height:4px;border-radius:2px;background:rgba(239,240,241,.28);
+  margin:13px auto 0;cursor:pointer;flex-shrink:0}
+#dsearch{display:flex;align-items:center;gap:10px;margin:14px 16px 6px;
+  background:var(--card);border:1px solid var(--border);border-radius:50px;padding:10px 18px}
+#dsearch svg{width:16px;height:16px;fill:var(--muted);flex-shrink:0}
+#sinput{flex:1;background:transparent;border:none;outline:none;
+  font:15px 'Noto Sans',system-ui,sans-serif;color:var(--text)}
+#sinput::placeholder{color:var(--muted)}
+#app-grid{flex:1;overflow-y:auto;padding:4px 12px 10px;scrollbar-width:none}
+#app-grid::-webkit-scrollbar{display:none}
+#grid{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}
+.app{display:flex;flex-direction:column;align-items:center;gap:6px;
+  padding:13px 4px 9px;background:var(--card);border:1px solid var(--border);
+  border-radius:var(--r);cursor:pointer;transition:transform .1s,background .15s}
+.app:active{transform:scale(.9);background:var(--blue-dim)}
+.app img{width:46px;height:46px;border-radius:13px}
+.app-ic{width:46px;height:46px;border-radius:13px;background:var(--blue-dim);
+  border:1px solid var(--border);display:flex;align-items:center;justify-content:center}
+.app-ic svg{width:24px;height:24px;fill:var(--blue)}
+.app span{font-size:11px;text-align:center;color:rgba(239,240,241,.85);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;padding:0 2px}
+#nores{grid-column:1/-1;text-align:center;color:var(--muted);padding:48px 0;font-size:14px}
+#shelf{display:flex;justify-content:space-around;align-items:center;flex-shrink:0;
+  padding:10px 20px calc(10px + env(safe-area-inset-bottom,0px));
+  border-top:1px solid var(--border);background:var(--panel)}
+.nb{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;cursor:pointer;transition:background .15s}
+.nb:active{background:var(--blue-dim)}
+.nb svg{width:22px;height:22px;fill:var(--text)}
+.nh{width:52px;height:52px;border-radius:16px;background:var(--blue-dim);
+  border:1px solid var(--blue-glow);display:flex;align-items:center;
+  justify-content:center;cursor:pointer;transition:background .15s,transform .1s}
+.nh:active{background:var(--blue-glow);transform:scale(.92)}
+.nh svg{width:24px;height:24px;fill:var(--blue)}
+</style>
+</head>
+<body>
+<div id="wallpaper"></div>
+<div id="home">
+  <div id="statusbar">
+    <span id="sb-time">00:00</span>
+    <div id="sb-right">
+      <svg viewBox="0 0 24 24"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3a4.237 4.237 0 0 0-6 0zm-4-4 2 2a7.074 7.074 0 0 1 10 0l2-2C15.14 9.14 8.87 9.14 5 13z"/></svg>
+      <svg viewBox="0 0 24 24"><path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z"/></svg>
+    </div>
+  </div>
+  <div id="kde-logo">
+    <svg viewBox="0 0 52 52" fill="none">
+      <circle cx="26" cy="26" r="24" stroke="#3DAEE9" stroke-width="1.5" opacity=".6"/>
+      <circle cx="26" cy="26" r="9" fill="#3DAEE9" opacity=".9"/>
+      <rect x="24" y="2" width="4" height="9" rx="2" fill="#3DAEE9" opacity=".65"/>
+      <rect x="24" y="41" width="4" height="9" rx="2" fill="#3DAEE9" opacity=".65"/>
+      <rect x="2" y="24" width="9" height="4" rx="2" fill="#3DAEE9" opacity=".65"/>
+      <rect x="41" y="24" width="9" height="4" rx="2" fill="#3DAEE9" opacity=".65"/>
+      <rect x="8" y="6" width="4" height="9" rx="2" fill="#3DAEE9" opacity=".55" transform="rotate(45 10 10.5)"/>
+      <rect x="38" y="6" width="4" height="9" rx="2" fill="#3DAEE9" opacity=".55" transform="rotate(-45 40 10.5)"/>
+      <rect x="8" y="37" width="4" height="9" rx="2" fill="#3DAEE9" opacity=".55" transform="rotate(-45 10 41.5)"/>
+      <rect x="38" y="37" width="4" height="9" rx="2" fill="#3DAEE9" opacity=".55" transform="rotate(45 40 41.5)"/>
+    </svg>
+  </div>
+  <div id="clock-wrap"><div id="clock">00:00</div><div id="date-str">Loading…</div></div>
+  <div id="spacer"></div>
+  <div id="pinned">
+    <div class="pin" onclick="launch('com.android.dialer','com.samsung.android.dialer')"><div class="pin-ic"><svg viewBox="0 0 24 24"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg></div><span>Phone</span></div>
+    <div class="pin" onclick="launch('com.android.mms','com.samsung.android.messaging')"><div class="pin-ic"><svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg></div><span>Messages</span></div>
+    <div class="pin" onclick="launch('org.kde.kdeconnect_tp')"><div class="pin-ic"><svg viewBox="0 0 24 24"><path d="M17 1H7C5.9 1 5 1.9 5 3v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zm-5 20c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm5-4H7V4h10v13z"/></svg></div><span>KDE Connect</span></div>
+    <div class="pin" onclick="launch('com.android.camera2','com.sec.android.app.camera')"><div class="pin-ic"><svg viewBox="0 0 24 24"><path d="M12 15.2A3.2 3.2 0 0 1 8.8 12 3.2 3.2 0 0 1 12 8.8 3.2 3.2 0 0 1 15.2 12 3.2 3.2 0 0 1 12 15.2M12 7a5 5 0 0 0-5 5 5 5 0 0 0 5 5 5 5 0 0 0 5-5 5 5 0 0 0-5-5m-6.5-.25L4 8.25V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.25L18.5 6.75H16l-1.5-2h-5L8 6.75H5.5z"/></svg></div><span>Camera</span></div>
+    <div class="pin" onclick="launch('org.kde.kasts','io.gitlab.kasts')"><div class="pin-ic"><svg viewBox="0 0 24 24"><path d="M12 3v9.28a4.39 4.39 0 0 0-1.5-.28C8.01 12 6 14.01 6 16.5S8.01 21 10.5 21c2.31 0 4.2-1.75 4.45-4H15V6h4V3h-7z"/></svg></div><span>Kasts</span></div>
+  </div>
+  <div id="swipe-hint" onclick="openDrawer()"><svg viewBox="0 0 24 24"><path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg><span>ALL APPS</span></div>
+</div>
+<div id="drawer">
+  <div id="handle" onclick="closeDrawer()"></div>
+  <div id="dsearch"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><input id="sinput" type="text" placeholder="Search apps…" oninput="filter(this.value)" autocomplete="off" autocorrect="off" spellcheck="false"></div>
+  <div id="app-grid"><div id="grid"></div></div>
+  <div id="shelf">
+    <div class="nb" onclick="if(typeof Android!='undefined')Android.goBack()"><svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></div>
+    <div class="nh" onclick="closeDrawer()"><svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></div>
+    <div class="nb" onclick="if(typeof Android!='undefined')Android.openRecents()"><svg viewBox="0 0 24 24"><path d="M3 5v14h18V5H3zm16 12H5V7h14v10zM7 9h10v2H7zm0 4h7v2H7z"/></svg></div>
+  </div>
+</div>
+<script>
+var DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+var MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+function tick(){var n=new Date(),h=String(n.getHours()).padStart(2,'0'),m=String(n.getMinutes()).padStart(2,'0');document.getElementById('clock').textContent=h+':'+m;document.getElementById('sb-time').textContent=h+':'+m;document.getElementById('date-str').textContent=DAYS[n.getDay()]+', '+MONTHS[n.getMonth()]+' '+n.getDate();}
+tick();setInterval(tick,10000);
+var open=false;
+function openDrawer(){open=true;document.getElementById('drawer').classList.add('open');document.getElementById('home').classList.add('hidden');setTimeout(function(){document.getElementById('sinput').focus();},320);}
+function closeDrawer(){open=false;document.getElementById('drawer').classList.remove('open');document.getElementById('home').classList.remove('hidden');document.getElementById('sinput').value='';filter('');}
+var sy=0,sx=0;
+document.addEventListener('touchstart',function(e){sy=e.touches[0].clientY;sx=e.touches[0].clientX;},{passive:true});
+document.addEventListener('touchend',function(e){var dy=sy-e.changedTouches[0].clientY,dx=Math.abs(sx-e.changedTouches[0].clientX);if(dy>55&&dx<90){if(!open)openDrawer();}else if(dy<-55&&dx<90){if(open)closeDrawer();}},{passive:true});
+var apps=[];
+function renderApps(json){try{apps=JSON.parse(json);}catch(e){apps=[];}filter('');}
+function filter(q){var s=q.toLowerCase().trim(),list=s?apps.filter(function(a){return a.label.toLowerCase().indexOf(s)>=0;}):apps;var g=document.getElementById('grid');g.innerHTML='';if(!list.length){g.innerHTML='<div id="nores">No apps found</div>';return;}list.forEach(function(a){var d=document.createElement('div');d.className='app';d.innerHTML=a.icon?'<img src="data:image/png;base64,'+a.icon+'" onerror="this.outerHTML=fallbackIc()"><span>'+esc(a.label)+'</span>':'<div class="app-ic"><svg viewBox="0 0 24 24"><path d="M6 2v6l2 2-2 2v6l6-3 6 3v-6l-2-2 2-2V2l-6 3L6 2z"/></svg></div><span>'+esc(a.label)+'</span>';d.onclick=function(){if(typeof Android!='undefined')Android.launchApp(a.pkg);};g.appendChild(d);});}
+function fallbackIc(){return '<div class="app-ic"><svg viewBox="0 0 24 24"><path d="M6 2v6l2 2-2 2v6l6-3 6 3v-6l-2-2 2-2V2l-6 3L6 2z"/></svg></div>';}
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function launch(){var a=arguments;if(typeof Android=='undefined')return;for(var i=0;i<a.length;i++){try{Android.launchApp(a[i]);return;}catch(e){}}}
+if(typeof Android!='undefined'){Android.requestApps();}else{renderApps(JSON.stringify([{label:'Settings',pkg:'',icon:''},{label:'KDE Connect',pkg:'',icon:''},{label:'Kasts',pkg:'',icon:''},{label:'Markor',pkg:'',icon:''},{label:'Files',pkg:'',icon:''}]));}
+</script>
+</body>
+</html>

@@ -15,7 +15,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build zip
+      - name: Rebuild launcher APK with new UI
+        run: |
+          set -euo pipefail
+          # Extract existing APK (has correct classes.dex + AndroidManifest)
+          mkdir -p /tmp/apk
+          unzip -q system/priv-app/PlasmaLauncher/PlasmaLauncher.apk -d /tmp/apk
+          # Replace HTML with latest version from source
+          mkdir -p /tmp/apk/assets/plasma
+          cp launcher/index.html /tmp/apk/assets/plasma/index.html
+          # Remove old signature
+          rm -rf /tmp/apk/META-INF
+          # Repack
+          cd /tmp/apk && zip -r9 /tmp/PlasmaLauncher-unsigned.apk .
+          cd $GITHUB_WORKSPACE
+          # Generate signing key
+          keytool -genkeypair -keystore /tmp/plasma.jks -alias plasma \
+            -storepass plasma123 -keypass plasma123 \
+            -keyalg RSA -keysize 2048 -validity 9999 \
+            -dname "CN=Plasma Mobile,OU=KDE,O=legendarymsr,L=Internet,ST=Internet,C=US" \
+            2>/dev/null
+          # Sign
+          jarsigner -keystore /tmp/plasma.jks -storepass plasma123 -keypass plasma123 \
+            -sigalg SHA256withRSA -digestalg SHA-256 \
+            /tmp/PlasmaLauncher-unsigned.apk plasma
+          cp /tmp/PlasmaLauncher-unsigned.apk system/priv-app/PlasmaLauncher/PlasmaLauncher.apk
+          echo "APK rebuilt: $(ls -lh system/priv-app/PlasmaLauncher/PlasmaLauncher.apk)"
+
+      - name: Build module zip
         run: bash build.sh
 
       - name: Read version
@@ -28,7 +55,20 @@ jobs:
           tag_name: ${{ steps.ver.outputs.VERSION }}
           name: Plasma Mobile Theme ${{ steps.ver.outputs.VERSION }}
           body: |
-            Flash via Magisk Manager. Requires Magisk v20.4+.
-            Applies Breeze dark theme, Noto Sans font, and Plasma Mobile launcher.
+            ## Plasma Mobile Theme ${{ steps.ver.outputs.VERSION }}
+
+            Flash via **Magisk Manager**. Requires Magisk v20.4+.
+
+            ### What's included
+            - **Plasma Mobile launcher** — home screen + swipe-up app drawer, KDE Gear logo, Breeze Dark glassmorphism, clock, date, pinned apps
+            - **Noto Sans** font (downloaded at flash time)
+            - **KDE wallpapers** — MilkyWay, Volna, Next, EveningGlow (downloaded at flash time)
+            - **KDE Android apps** downloaded at flash time: KDE Connect, Kasts, Markor
+            - **Breeze Dark** system theme: dark mode, Breeze Blue accent (#3DAEE9), squircle icons, gesture nav, 0.8× animation speed
+
+            ### After flashing
+            1. Reboot
+            2. If prompted, pick **Plasma Mobile** as your home app
+            3. Check `/data/local/tmp/plasma-theme.log` if theming doesn't apply
           files: plasma-mobile-${{ steps.ver.outputs.VERSION }}.zip
           make_latest: true
