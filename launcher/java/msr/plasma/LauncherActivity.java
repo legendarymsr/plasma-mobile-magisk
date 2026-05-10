@@ -6,10 +6,15 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Base64;
 import android.view.KeyEvent;
+import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
@@ -23,21 +28,48 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class LauncherActivity extends Activity {
 
     private WebView mWebView;
+    private ExecutorService mIconPool;
+    private final Handler mMainHandler = new Handler(Looper.getMainLooper());
 
     @Override
+    @SuppressWarnings("deprecation")
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         requestWindowFeature(Window.FEATURE_NO_TITLE);
-        getWindow().setFlags(
-                WindowManager.LayoutParams.FLAG_FULLSCREEN,
-                WindowManager.LayoutParams.FLAG_FULLSCREEN);
+
+        // Transparent bars so the theme's translucent flags actually show through
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
+        getWindow().setNavigationBarColor(Color.TRANSPARENT);
+
+        // Black prevents white flash while WebView loads
+        getWindow().getDecorView().setBackgroundColor(Color.BLACK);
+
+        // Re-hide bars whenever Samsung's shell briefly un-hides them
+        getWindow().getDecorView().setOnSystemUiVisibilityChangeListener(
+            new View.OnSystemUiVisibilityChangeListener() {
+                @Override
+                public void onSystemUiVisibilityChange(int visibility) {
+                    if ((visibility & View.SYSTEM_UI_FLAG_FULLSCREEN) == 0) {
+                        applyImmersive();
+                    }
+                }
+            }
+        );
+
+        mIconPool = Executors.newFixedThreadPool(3);
 
         mWebView = new WebView(this);
+        mWebView.setBackgroundColor(Color.BLACK);
+        // Prevent Android from adding inset padding — the WebView must fill the full screen
+        mWebView.setFitsSystemWindows(false);
         setContentView(mWebView);
 
         WebSettings ws = mWebView.getSettings();
@@ -51,12 +83,49 @@ public class LauncherActivity extends Activity {
     }
 
     @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        // Called every time the launcher comes to foreground — Samsung needs this
+        if (hasFocus) applyImmersive();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void applyImmersive() {
+        // Layer 1: legacy systemUiVisibility — Samsung One UI 7 HOME activities ignore
+        // WindowInsetsController alone; both layers must be set simultaneously.
+        int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+        getWindow().getDecorView().setSystemUiVisibility(flags);
+
+        // Layer 2: WindowInsetsController (Android 11+) for forward-compatibility
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            android.view.WindowInsetsController wic = getWindow().getInsetsController();
+            if (wic != null) {
+                wic.hide(android.view.WindowInsets.Type.systemBars());
+                wic.setSystemBarsBehavior(
+                    android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        }
+    }
+
+    @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
-            mWebView.evaluateJavascript("if(typeof drawerOpen!='undefined'&&drawerOpen)closeDrawer();", null);
+            mWebView.evaluateJavascript(
+                "if(typeof drawerOpen!='undefined'&&drawerOpen)closeDrawer();", null);
             return true;
         }
         return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        mIconPool.shutdownNow();
     }
 
     private class PlasmaJS {
@@ -66,54 +135,131 @@ public class LauncherActivity extends Activity {
             final PackageManager pm = getPackageManager();
             final Intent launchIntent = new Intent(Intent.ACTION_MAIN);
             launchIntent.addCategory(Intent.CATEGORY_LAUNCHER);
-            final List<android.content.pm.ResolveInfo> list =
-                    pm.queryIntentActivities(launchIntent, 0);
 
-            new Thread(new Runnable() {
+            // If the background thread hasn't called renderApps within 3 s, unblock the UI
+            mMainHandler.postDelayed(new Runnable() {
+                public void run() {
+                    mWebView.evaluateJavascript(
+                        "if(!appsLoaded)renderApps([])", null);
+                }
+            }, 3000);
+
+            mIconPool.submit(new Runnable() {
                 public void run() {
                     try {
+                        List<android.content.pm.ResolveInfo> list;
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            list = pm.queryIntentActivities(launchIntent,
+                                PackageManager.ResolveInfoFlags.of(0));
+                        } else {
+                            //noinspection deprecation
+                            list = pm.queryIntentActivities(launchIntent, 0);
+                        }
+
+                        long deadline = System.currentTimeMillis() + 3000;
                         JSONArray arr = new JSONArray();
                         for (android.content.pm.ResolveInfo ri : list) {
+                            if (System.currentTimeMillis() > deadline) break;
                             String pkg = ri.activityInfo.packageName;
                             if (pkg.equals(getPackageName())) continue;
                             try {
                                 ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
                                 String label = pm.getApplicationLabel(ai).toString();
-                                String icon = iconToBase64(pm, pkg);
                                 JSONObject o = new JSONObject();
                                 o.put("pkg", pkg);
                                 o.put("label", label);
-                                o.put("icon", icon);
                                 arr.put(o);
-                            } catch (Exception ignored) { /* skip bad entries */ }
+                            } catch (Exception ignored) { /* skip */ }
                         }
-                        final JSONArray sorted = sortByLabel(arr);
-                        final String json = sorted.toString();
-                        runOnUiThread(new Runnable() {
+                        final String json = sortByLabel(arr).toString();
+                        mMainHandler.post(new Runnable() {
                             public void run() {
                                 mWebView.evaluateJavascript("renderApps(" + json + ")", null);
                             }
                         });
                         sendShelfApps(pm);
-                    } catch (Exception ignored) { /* whole op failed silently */ }
+                    } catch (Exception ignored) { /* ignored */ }
                 }
-            }).start();
+            });
         }
 
+        // Called by JavaScript for each app card that needs an icon.
+        // Encodes a single icon on a pool thread and calls back renderAppIcon(pkg, b64).
+        @JavascriptInterface
+        public void getAppIcon(final String pkg) {
+            mIconPool.submit(new Runnable() {
+                public void run() {
+                    final String b64 = iconToBase64(getPackageManager(), pkg);
+                    if (b64.isEmpty()) return;
+                    mMainHandler.post(new Runnable() {
+                        public void run() {
+                            mWebView.evaluateJavascript(
+                                "renderAppIcon(" + jsonStr(pkg) + "," + jsonStr(b64) + ")", null);
+                        }
+                    });
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void launchApp(String pkg) {
+            try {
+                Intent intent = getPackageManager().getLaunchIntentForPackage(pkg);
+                if (intent != null) {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                }
+            } catch (Exception ignored) { /* ignored */ }
+        }
+
+        @JavascriptInterface
+        public void openSearch() {
+            try {
+                Intent i = new Intent(Intent.ACTION_WEB_SEARCH);
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+            } catch (Exception ignored) {
+                mMainHandler.post(new Runnable() {
+                    public void run() {
+                        mWebView.evaluateJavascript("openDrawer();", null);
+                    }
+                });
+            }
+        }
+
+        @JavascriptInterface
+        public void openRecents() {
+            mMainHandler.post(new Runnable() {
+                public void run() {
+                    mWebView.dispatchKeyEvent(
+                        new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_APP_SWITCH));
+                    mWebView.dispatchKeyEvent(
+                        new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_APP_SWITCH));
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void goBack() {
+            mMainHandler.post(new Runnable() {
+                public void run() {
+                    mWebView.evaluateJavascript(
+                        "if(typeof drawerOpen!='undefined'&&drawerOpen)closeDrawer();", null);
+                }
+            });
+        }
+
+        // Shelf apps (max 5) are small enough to encode icons eagerly
         private void sendShelfApps(final PackageManager pm) {
-            final String[] pkgs   = {
+            final String[] pkgs = {
                 "com.samsung.android.dialer", "com.android.dialer",
                 "com.samsung.android.messaging", "com.android.mms",
                 "com.sec.android.app.camera", "com.android.camera2",
-                "org.kde.kdeconnect_tp",
-                "org.kde.kasts"
+                "org.kde.kdeconnect_tp", "org.kde.kasts"
             };
             final String[] labels = {
-                "Phone", "Phone",
-                "Messages", "Messages",
-                "Camera", "Camera",
-                "KDE Connect",
-                "Kasts"
+                "Phone", "Phone", "Messages", "Messages",
+                "Camera", "Camera", "KDE Connect", "Kasts"
             };
             try {
                 JSONArray arr = new JSONArray();
@@ -129,7 +275,7 @@ public class LauncherActivity extends Activity {
                 }
                 if (arr.length() == 0) return;
                 final String json = arr.toString();
-                runOnUiThread(new Runnable() {
+                mMainHandler.post(new Runnable() {
                     public void run() {
                         mWebView.evaluateJavascript("renderShelfApps(" + json + ")", null);
                     }
@@ -155,56 +301,8 @@ public class LauncherActivity extends Activity {
             }
         }
 
-        @JavascriptInterface
-        public void launchApp(String pkg) {
-            try {
-                Intent intent = getPackageManager().getLaunchIntentForPackage(pkg);
-                if (intent != null) {
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(intent);
-                }
-            } catch (Exception ignored) { /* ignored */ }
-        }
-
-        @JavascriptInterface
-        public void openSearch() {
-            try {
-                Intent i = new Intent(Intent.ACTION_WEB_SEARCH);
-                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(i);
-            } catch (Exception ignored) {
-                openDrawerViaJs();
-            }
-        }
-
-        @JavascriptInterface
-        public void openRecents() {
-            runOnUiThread(new Runnable() {
-                public void run() {
-                    mWebView.dispatchKeyEvent(new KeyEvent(
-                            KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_APP_SWITCH));
-                    mWebView.dispatchKeyEvent(new KeyEvent(
-                            KeyEvent.ACTION_UP, KeyEvent.KEYCODE_APP_SWITCH));
-                }
-            });
-        }
-
-        @JavascriptInterface
-        public void goBack() {
-            runOnUiThread(new Runnable() {
-                public void run() {
-                    mWebView.evaluateJavascript(
-                        "if(typeof drawerOpen!='undefined'&&drawerOpen)closeDrawer();", null);
-                }
-            });
-        }
-
-        private void openDrawerViaJs() {
-            runOnUiThread(new Runnable() {
-                public void run() {
-                    mWebView.evaluateJavascript("openDrawer();", null);
-                }
-            });
+        private String jsonStr(String s) {
+            return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
         }
 
         private JSONArray sortByLabel(JSONArray arr) {

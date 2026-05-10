@@ -67,9 +67,10 @@ jobs:
           find /tmp/classes -name '*.class' | xargs \
             "$D8" --lib "$ANDROID_JAR" --min-api 21 --output /tmp/dex
 
-          # 3. Package manifest + assets into APK skeleton via aapt
+          # 3. Package manifest + resources + assets into APK skeleton via aapt
           "$AAPT" package \
             -M launcher/AndroidManifest.xml \
+            -S launcher/res \
             -A /tmp/assets \
             -I "$ANDROID_JAR" \
             -F /tmp/plasma-res.apk

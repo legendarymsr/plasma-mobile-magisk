@@ -170,17 +170,25 @@ document.addEventListener('touchend',function(e){
   else if(dy<-55&&dx<90){if(drawerOpen)closeDrawer();}
 },{passive:true});
 
+// ── App list state ───────────────────────────────────────────────────────────────────
 var apps=[];
+var appsLoaded=false;
+var iconCache={};   // pkg → base64 PNG string
+var iconPending={}; // pkg → true (requested, not yet received)
 
-function renderApps(json){
-  try{apps=JSON.parse(json);}catch(e){apps=[];}
+// Called by Java: arr is a plain JS array [{pkg, label}, ...]
+// Java passes it as a literal: renderApps([{...},...]) — NOT a JSON string.
+function renderApps(arr){
+  appsLoaded=true;
+  apps=Array.isArray(arr)?arr:[];
   filter('');
 }
 
-function renderShelfApps(json){
+// Called by Java: arr is [{pkg, label, icon}, ...] for the bottom shelf (5 apps max)
+function renderShelfApps(arr){
   try{
-    var list=JSON.parse(json);
-    if(!list||!list.length)return;
+    var list=Array.isArray(arr)?arr:[];
+    if(!list.length)return;
     var pinned=document.getElementById('pinned');
     pinned.innerHTML='';
     list.slice(0,5).forEach(function(a){
@@ -195,28 +203,67 @@ function renderShelfApps(json){
   }catch(e){}
 }
 
+// Called by Java after getAppIcon() completes for a single package.
+// Updates every card with data-pkg=pkg and primes the cache for future filter() calls.
+function renderAppIcon(pkg,b64){
+  iconCache[pkg]=b64;
+  delete iconPending[pkg];
+  var cards=document.querySelectorAll('.app[data-pkg="'+pkg+'"]');
+  for(var i=0;i<cards.length;i++){
+    var ic=cards[i].querySelector('.app-ic');
+    if(ic)ic.outerHTML='<img src="data:image/png;base64,'+b64+'">';
+  }
+}
+
+// Request icons for all grid cards that don't have one yet, visible rows first.
+function requestIconsForGrid(){
+  if(typeof Android==='undefined')return;
+  var grid=document.getElementById('app-grid');
+  var gridRect=grid.getBoundingClientRect();
+  var cards=grid.querySelectorAll('.app[data-pkg]');
+  var visible=[],below=[];
+  for(var i=0;i<cards.length;i++){
+    var pkg=cards[i].getAttribute('data-pkg');
+    if(iconCache[pkg]||iconPending[pkg])continue;
+    var r=cards[i].getBoundingClientRect();
+    if(r.top<gridRect.bottom)visible.push(pkg);
+    else below.push(pkg);
+  }
+  visible.concat(below).forEach(function(pkg){
+    iconPending[pkg]=true;
+    Android.getAppIcon(pkg);
+  });
+}
+
+document.getElementById('app-grid').addEventListener('scroll',function(){
+  requestIconsForGrid();
+},{passive:true});
+
 function filter(q){
   var s=q.toLowerCase().trim();
   var list=s?apps.filter(function(a){return a.label.toLowerCase().indexOf(s)>=0;}):apps;
   var g=document.getElementById('grid');
   g.innerHTML='';
   if(apps.length===0){
-    g.innerHTML='<div id="loading-msg">Loading apps…</div>';
+    g.innerHTML='<div id="loading-msg">'+(appsLoaded?'No apps found':'Loading apps…')+'</div>';
     return;
   }
   if(!list.length){g.innerHTML='<div id="nores">No apps found</div>';return;}
   list.forEach(function(a){
     var d=document.createElement('div');
     d.className='app';
-    d.innerHTML=a.icon
-      ?'<img src="data:image/png;base64,'+a.icon+'" onerror="this.outerHTML=fallbackIc()"><span>'+esc(a.label)+'</span>'
-      :'<div class="app-ic"><svg viewBox="0 0 24 24"><path d="M6 2v6l2 2-2 2v6l6-3 6 3v-6l-2-2 2-2V2l-6 3L6 2z"/></svg></div><span>'+esc(a.label)+'</span>';
+    d.setAttribute('data-pkg',a.pkg);
+    var ic=iconCache[a.pkg]
+      ?'<img src="data:image/png;base64,'+iconCache[a.pkg]+'">' 
+      :'<div class="app-ic"><svg viewBox="0 0 24 24"><path d="M6 2v6l2 2-2 2v6l6-3 6 3v-6l-2-2 2-2V2l-6 3L6 2z"/></svg></div>';
+    d.innerHTML=ic+'<span>'+esc(a.label)+'</span>';
     d.onclick=function(){if(typeof Android!='undefined')Android.launchApp(a.pkg);};
     g.appendChild(d);
   });
+  // Kick off icon loading after the DOM is painted
+  setTimeout(requestIconsForGrid,0);
 }
 
-function fallbackIc(){return '<div class="app-ic"><svg viewBox="0 0 24 24"><path d="M6 2v6l2 2-2 2v6l6-3 6 3v-6l-2-2 2-2V2l-6 3L6 2z"/></svg></div>';}
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function launch(){
   var a=arguments;
@@ -240,18 +287,18 @@ function requestApps(){
     _reqAttempts++;
     setTimeout(requestApps,800);
   } else {
-    renderApps(JSON.stringify([
-      {label:'Settings',pkg:'com.android.settings',icon:''},
-      {label:'KDE Connect',pkg:'org.kde.kdeconnect_tp',icon:''},
-      {label:'Kasts',pkg:'org.kde.kasts',icon:''},
-      {label:'Markor',pkg:'net.gsantner.markor',icon:''},
-      {label:'Files',pkg:'com.android.documentsui',icon:''}
-    ]));
+    renderApps([
+      {label:'Settings',pkg:'com.android.settings'},
+      {label:'KDE Connect',pkg:'org.kde.kdeconnect_tp'},
+      {label:'Kasts',pkg:'org.kde.kasts'},
+      {label:'Markor',pkg:'net.gsantner.markor'},
+      {label:'Files',pkg:'com.android.documentsui'}
+    ]);
   }
 }
 
 setTimeout(function(){
-  if(typeof Android!='undefined'&&apps.length===0){Android.requestApps();}
+  if(typeof Android!='undefined'&&!appsLoaded){Android.requestApps();}
 },2000);
 
 requestApps();

@@ -14,6 +14,7 @@
     <application
         android:label="Plasma Mobile"
         android:allowBackup="false"
+        android:hardwareAccelerated="true"
         android:supportsRtl="true">
 
         <activity
@@ -23,7 +24,9 @@
             android:stateNotNeeded="true"
             android:exported="true"
             android:screenOrientation="portrait"
-            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+            android:windowSoftInputMode="adjustResize"
+            android:windowLayoutInDisplayCutoutMode="shortEdges"
+            android:theme="@style/Theme.PlasmaLauncher">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
