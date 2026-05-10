@@ -1,5 +1,5 @@
 #!/sbin/sh
-# Magisk Module Installer — Plasma Mobile Theme
+# Magisk Module Installer — Plasma Mobile Theme + Launcher
 
 SKIPUNZIP=1
 
@@ -10,16 +10,20 @@ abort()     { ui_print "ERROR: $1"; exit 1; }
   ui_print "! Magisk v20.4+ required"; exit 1
 }
 
-ui_print "- Plasma Mobile Theme"
+ui_print "- Plasma Mobile Theme + Launcher"
 ui_print "  by legendarymsr"
 
 unzip -o "$ZIPFILE" -x 'META-INF/*' -d "$MODPATH" >&2
 
-# Fonts and wallpapers are laid out under system/ — standard read permissions
-set_perm_recursive "$MODPATH/system/fonts"          root root 0644 0644
-set_perm_recursive "$MODPATH/system/media"          root root 0644 0644
-set_perm_recursive "$MODPATH/system/etc/fonts"      root root 0644 0644
-set_perm_recursive "$MODPATH/system/product/overlay" root root 0644 0644
+# Fonts and wallpapers: read-only
+set_perm_recursive "$MODPATH/system/fonts"                   root root 0644 0644
+set_perm_recursive "$MODPATH/system/media"                   root root 0644 0644
+set_perm_recursive "$MODPATH/system/etc"                     root root 0644 0644
+
+# Launcher APK: must be readable by PackageManager (priv-app)
+set_perm_recursive "$MODPATH/system/priv-app"                root root 0755 0644
+
 chmod 0755 "$MODPATH/service.sh"
 
-ui_print "- Done. Reboot to apply Plasma Mobile theme."
+ui_print "- Launcher installed: msr.plasma"
+ui_print "- Reboot, then set Plasma Mobile as your default home app."
