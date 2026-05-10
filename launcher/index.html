@@ -42,6 +42,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:'Noto Sans',system-
 .pin-ic{width:46px;height:46px;border-radius:14px;background:var(--card);
   border:1px solid var(--border);display:flex;align-items:center;justify-content:center}
 .pin-ic svg{width:24px;height:24px;fill:var(--blue)}
+.pin-ic img{width:28px;height:28px;border-radius:6px;object-fit:contain}
 .pin span{font-size:10px;color:var(--muted)}
 #swipe-hint{display:flex;flex-direction:column;align-items:center;gap:3px;
   padding-bottom:calc(env(safe-area-inset-bottom,10px)+6px);
@@ -75,6 +76,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:'Noto Sans',system-
 .app span{font-size:11px;text-align:center;color:rgba(239,240,241,.85);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%;padding:0 2px}
 #nores{grid-column:1/-1;text-align:center;color:var(--muted);padding:48px 0;font-size:14px}
+#loading-msg{grid-column:1/-1;text-align:center;color:var(--muted);padding:48px 0;font-size:14px}
 #shelf{display:flex;justify-content:space-around;align-items:center;flex-shrink:0;
   padding:10px 20px calc(10px + env(safe-area-inset-bottom,0px));
   border-top:1px solid var(--border);background:var(--panel)}
@@ -96,7 +98,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:'Noto Sans',system-
     <span id="sb-time">00:00</span>
     <div id="sb-right">
       <svg viewBox="0 0 24 24"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3a4.237 4.237 0 0 0-6 0zm-4-4 2 2a7.074 7.074 0 0 1 10 0l2-2C15.14 9.14 8.87 9.14 5 13z"/></svg>
-      <svg viewBox="0 0 24 24"><path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z"/></svg>
+      <svg viewBox="0 0 24 24"><path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7.6 4 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z"/></svg>
     </div>
   </div>
   <div id="kde-logo">
@@ -127,7 +129,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:'Noto Sans',system-
 <div id="drawer">
   <div id="handle" onclick="closeDrawer()"></div>
   <div id="dsearch"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><input id="sinput" type="text" placeholder="Search apps…" oninput="filter(this.value)" autocomplete="off" autocorrect="off" spellcheck="false"></div>
-  <div id="app-grid"><div id="grid"></div></div>
+  <div id="app-grid"><div id="grid"><div id="loading-msg">Loading apps…</div></div></div>
   <div id="shelf">
     <div class="nb" onclick="if(typeof Android!='undefined')Android.goBack()"><svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg></div>
     <div class="nh" onclick="closeDrawer()"><svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></div>
@@ -137,21 +139,122 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:'Noto Sans',system-
 <script>
 var DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 var MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
-function tick(){var n=new Date(),h=String(n.getHours()).padStart(2,'0'),m=String(n.getMinutes()).padStart(2,'0');document.getElementById('clock').textContent=h+':'+m;document.getElementById('sb-time').textContent=h+':'+m;document.getElementById('date-str').textContent=DAYS[n.getDay()]+', '+MONTHS[n.getMonth()]+' '+n.getDate();}
-tick();setInterval(tick,10000);
-var open=false;
-function openDrawer(){open=true;document.getElementById('drawer').classList.add('open');document.getElementById('home').classList.add('hidden');setTimeout(function(){document.getElementById('sinput').focus();},320);}
-function closeDrawer(){open=false;document.getElementById('drawer').classList.remove('open');document.getElementById('home').classList.remove('hidden');document.getElementById('sinput').value='';filter('');}
+function tick(){
+  var n=new Date(),h=String(n.getHours()).padStart(2,'0'),m=String(n.getMinutes()).padStart(2,'0');
+  document.getElementById('clock').textContent=h+':'+m;
+  document.getElementById('sb-time').textContent=h+':'+m;
+  document.getElementById('date-str').textContent=DAYS[n.getDay()]+', '+MONTHS[n.getMonth()]+' '+n.getDate();
+}
+tick();setInterval(tick,30000);
+
+var drawerOpen=false;
+function openDrawer(){
+  drawerOpen=true;
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('home').classList.add('hidden');
+  setTimeout(function(){document.getElementById('sinput').focus();},320);
+}
+function closeDrawer(){
+  drawerOpen=false;
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('home').classList.remove('hidden');
+  document.getElementById('sinput').value='';
+  filter('');
+}
+
 var sy=0,sx=0;
 document.addEventListener('touchstart',function(e){sy=e.touches[0].clientY;sx=e.touches[0].clientX;},{passive:true});
-document.addEventListener('touchend',function(e){var dy=sy-e.changedTouches[0].clientY,dx=Math.abs(sx-e.changedTouches[0].clientX);if(dy>55&&dx<90){if(!open)openDrawer();}else if(dy<-55&&dx<90){if(open)closeDrawer();}},{passive:true});
+document.addEventListener('touchend',function(e){
+  var dy=sy-e.changedTouches[0].clientY,dx=Math.abs(sx-e.changedTouches[0].clientX);
+  if(dy>55&&dx<90){if(!drawerOpen)openDrawer();}
+  else if(dy<-55&&dx<90){if(drawerOpen)closeDrawer();}
+},{passive:true});
+
 var apps=[];
-function renderApps(json){try{apps=JSON.parse(json);}catch(e){apps=[];}filter('');}
-function filter(q){var s=q.toLowerCase().trim(),list=s?apps.filter(function(a){return a.label.toLowerCase().indexOf(s)>=0;}):apps;var g=document.getElementById('grid');g.innerHTML='';if(!list.length){g.innerHTML='<div id="nores">No apps found</div>';return;}list.forEach(function(a){var d=document.createElement('div');d.className='app';d.innerHTML=a.icon?'<img src="data:image/png;base64,'+a.icon+'" onerror="this.outerHTML=fallbackIc()"><span>'+esc(a.label)+'</span>':'<div class="app-ic"><svg viewBox="0 0 24 24"><path d="M6 2v6l2 2-2 2v6l6-3 6 3v-6l-2-2 2-2V2l-6 3L6 2z"/></svg></div><span>'+esc(a.label)+'</span>';d.onclick=function(){if(typeof Android!='undefined')Android.launchApp(a.pkg);};g.appendChild(d);});}
+
+function renderApps(json){
+  try{apps=JSON.parse(json);}catch(e){apps=[];}
+  filter('');
+}
+
+function renderShelfApps(json){
+  try{
+    var list=JSON.parse(json);
+    if(!list||!list.length)return;
+    var pinned=document.getElementById('pinned');
+    pinned.innerHTML='';
+    list.slice(0,5).forEach(function(a){
+      var d=document.createElement('div');
+      d.className='pin';
+      d.innerHTML=a.icon
+        ?'<div class="pin-ic"><img src="data:image/png;base64,'+a.icon+'"></div><span>'+esc(a.label)+'</span>'
+        :'<div class="pin-ic"><svg viewBox="0 0 24 24"><path d="M6 2v6l2 2-2 2v6l6-3 6 3v-6l-2-2 2-2V2l-6 3L6 2z"/></svg></div><span>'+esc(a.label)+'</span>';
+      d.onclick=(function(pkg){return function(){launch(pkg);};})(a.pkg);
+      pinned.appendChild(d);
+    });
+  }catch(e){}
+}
+
+function filter(q){
+  var s=q.toLowerCase().trim();
+  var list=s?apps.filter(function(a){return a.label.toLowerCase().indexOf(s)>=0;}):apps;
+  var g=document.getElementById('grid');
+  g.innerHTML='';
+  if(apps.length===0){
+    g.innerHTML='<div id="loading-msg">Loading apps…</div>';
+    return;
+  }
+  if(!list.length){g.innerHTML='<div id="nores">No apps found</div>';return;}
+  list.forEach(function(a){
+    var d=document.createElement('div');
+    d.className='app';
+    d.innerHTML=a.icon
+      ?'<img src="data:image/png;base64,'+a.icon+'" onerror="this.outerHTML=fallbackIc()"><span>'+esc(a.label)+'</span>'
+      :'<div class="app-ic"><svg viewBox="0 0 24 24"><path d="M6 2v6l2 2-2 2v6l6-3 6 3v-6l-2-2 2-2V2l-6 3L6 2z"/></svg></div><span>'+esc(a.label)+'</span>';
+    d.onclick=function(){if(typeof Android!='undefined')Android.launchApp(a.pkg);};
+    g.appendChild(d);
+  });
+}
+
 function fallbackIc(){return '<div class="app-ic"><svg viewBox="0 0 24 24"><path d="M6 2v6l2 2-2 2v6l6-3 6 3v-6l-2-2 2-2V2l-6 3L6 2z"/></svg></div>';}
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function launch(){var a=arguments;if(typeof Android=='undefined')return;for(var i=0;i<a.length;i++){try{Android.launchApp(a[i]);return;}catch(e){}}}
-if(typeof Android!='undefined'){Android.requestApps();}else{renderApps(JSON.stringify([{label:'Settings',pkg:'',icon:''},{label:'KDE Connect',pkg:'',icon:''},{label:'Kasts',pkg:'',icon:''},{label:'Markor',pkg:'',icon:''},{label:'Files',pkg:'',icon:''}]));}
+function launch(){
+  var a=arguments;
+  if(typeof Android=='undefined')return;
+  for(var i=0;i<a.length;i++){try{Android.launchApp(a[i]);return;}catch(e){}}
+}
+
+function openSearch(){
+  if(typeof Android!='undefined'){
+    try{Android.openSearch();return;}catch(e){}
+  }
+  openDrawer();
+  setTimeout(function(){document.getElementById('sinput').focus();},350);
+}
+
+var _reqAttempts=0;
+function requestApps(){
+  if(typeof Android!='undefined'){
+    Android.requestApps();
+  } else if(_reqAttempts<3){
+    _reqAttempts++;
+    setTimeout(requestApps,800);
+  } else {
+    renderApps(JSON.stringify([
+      {label:'Settings',pkg:'com.android.settings',icon:''},
+      {label:'KDE Connect',pkg:'org.kde.kdeconnect_tp',icon:''},
+      {label:'Kasts',pkg:'org.kde.kasts',icon:''},
+      {label:'Markor',pkg:'net.gsantner.markor',icon:''},
+      {label:'Files',pkg:'com.android.documentsui',icon:''}
+    ]));
+  }
+}
+
+setTimeout(function(){
+  if(typeof Android!='undefined'&&apps.length===0){Android.requestApps();}
+},2000);
+
+requestApps();
 </script>
 </body>
 </html>

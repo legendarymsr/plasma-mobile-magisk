@@ -181,39 +181,59 @@ fi
 PLASMA_PKG="msr.plasma"
 PLASMA_ACT="${PLASMA_PKG}/.LauncherActivity"
 
-if ! pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
-  log "Plasma not in package list — trying explicit install"
-  # Uninstall any stale version first (avoids INSTALL_FAILED_UPDATE_INCOMPATIBLE)
-  pm uninstall --user 0 "$PLASMA_PKG" 2>/dev/null || true
+_plasma_install() {
+  local apk
   for apk in \
     /system/priv-app/PlasmaLauncher/PlasmaLauncher.apk \
     "$MODDIR/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk"; do
     [ -f "$apk" ] || continue
+    # Clear any stale version first (avoids INSTALL_FAILED_UPDATE_INCOMPATIBLE)
+    pm uninstall --user 0 "$PLASMA_PKG" 2>/dev/null || true
     pm install -r --user 0 "$apk" 2>/dev/null \
       && log "Plasma APK installed from $apk" \
       || log "Plasma APK install FAILED from $apk"
-    break
+    return
   done
-fi
+  log "Plasma APK not found at any expected path"
+}
 
-sleep 5
-k=0
-while ! pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; do
-  sleep 2; k=$((k+1)); [ $k -gt 15 ] && break
-done
-
-if pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
-  log "Plasma launcher found in package list"
+_plasma_set_home() {
   pm set-home-activity "$PLASMA_ACT" 2>/dev/null \
     && log "home: pm ok" || log "home: pm FAILED"
-  pm set-home-activity --user 0 "$PLASMA_ACT" 2>/dev/null && log "home: pm-user ok" || true
+  pm set-home-activity --user 0 "$PLASMA_ACT" 2>/dev/null \
+    && log "home: pm-user ok" || true
   cmd role add-role-holder android.app.role.HOME "$PLASMA_PKG" 0 2>/dev/null \
     && log "home: role ok" || log "home: role FAILED"
   settings put secure default_home_package_name "$PLASMA_PKG" 2>/dev/null \
     && log "home: settings ok" || true
-  log "Manual: Settings -> Apps -> Default apps -> Home app -> Plasma Mobile"
+  log "If not switched: Settings → Apps → Default apps → Home app → Plasma Mobile"
+}
+
+# Phase 1: if the Magisk overlay didn't auto-install it, do an explicit install
+if ! pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
+  log "Plasma not in package list — explicit install (overlay may need time)"
+  _plasma_install
+fi
+
+# Wait for the package scanner to finish (system apps can take a few seconds)
+k=0
+while ! pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; do
+  sleep 2; k=$((k+1))
+  [ $k -gt 20 ] && break
+done
+
+# Phase 2: if STILL missing after waiting, one last explicit install attempt
+if ! pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
+  log "Plasma not found after ${k}×2 s — final install attempt"
+  _plasma_install
+  sleep 4
+fi
+
+if pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
+  log "Plasma launcher confirmed in package list"
+  _plasma_set_home
 else
-  log "Plasma launcher still NOT found — APK may be rejected (check signing)"
+  log "Plasma launcher NOT found — check /sdcard/Download/plasma-theme.log"
 fi
 
 if pm list packages 2>/dev/null | grep -q "org.kde.kdeconnect_tp"; then
