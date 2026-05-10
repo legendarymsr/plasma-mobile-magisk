@@ -15,23 +15,22 @@ ui_print "  by legendarymsr"
 
 unzip -o "$ZIPFILE" -x 'META-INF/*' -d "$MODPATH" >&2
 
-# Create directories customize.sh will populate
 mkdir -p "$MODPATH/system/fonts"
 mkdir -p "$MODPATH/system/media/wallpapers"
 mkdir -p "$MODPATH/system/app"
 
-# Set permissions
-set_perm_recursive "$MODPATH/system/fonts"     root root 0644 0644
-set_perm_recursive "$MODPATH/system/media"     root root 0644 0644
-set_perm_recursive "$MODPATH/system/etc"       root root 0644 0644
+# dirs need 0755 (not 0644) to be traversable
+set_perm_recursive "$MODPATH/system/fonts"     root root 0755 0644
+set_perm_recursive "$MODPATH/system/media"     root root 0755 0644
+set_perm_recursive "$MODPATH/system/etc"       root root 0755 0644
 set_perm_recursive "$MODPATH/system/priv-app"  root root 0755 0644
 set_perm_recursive "$MODPATH/system/app"       root root 0755 0644
 
 chmod 0755 "$MODPATH/service.sh"
+[ -f "$MODPATH/action.sh" ] && chmod 0755 "$MODPATH/action.sh"
 
 ui_print "- Plasma launcher installed"
 
-# Download fonts, wallpapers, and KDE apps
 . "$MODPATH/customize.sh"
 
 ui_print "- Reboot to apply. Pick Plasma Mobile as home if prompted."
