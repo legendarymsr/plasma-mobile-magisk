@@ -249,6 +249,18 @@ public class LauncherActivity extends Activity {
             });
         }
 
+        @JavascriptInterface
+        public int getNavBarHeight() {
+            int id = getResources().getIdentifier("navigation_bar_height", "dimen", "android");
+            return id > 0 ? getResources().getDimensionPixelSize(id) : 0;
+        }
+
+        @JavascriptInterface
+        public int getStatusBarHeight() {
+            int id = getResources().getIdentifier("status_bar_height", "dimen", "android");
+            return id > 0 ? getResources().getDimensionPixelSize(id) : 0;
+        }
+
         // Shelf apps (max 5) are small enough to encode icons eagerly
         private void sendShelfApps(final PackageManager pm) {
             final String[] pkgs = {
