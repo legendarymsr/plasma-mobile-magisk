@@ -15,57 +15,79 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Rebuild launcher APK with new UI (v1+v2 signing)
+      - name: Build launcher APK from source
         run: |
           set -euo pipefail
 
-          # Extract existing APK (has correct classes.dex + AndroidManifest)
-          mkdir -p /tmp/apk
-          unzip -q system/priv-app/PlasmaLauncher/PlasmaLauncher.apk -d /tmp/apk
+          ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
 
-          # Replace HTML with latest from source
-          mkdir -p /tmp/apk/assets/plasma
-          cp launcher/index.html /tmp/apk/assets/plasma/index.html
-
-          # Remove old signature and repack
-          rm -rf /tmp/apk/META-INF
-          cd /tmp/apk && zip -r9 /tmp/PlasmaLauncher-unaligned.apk .
-          cd "$GITHUB_WORKSPACE"
-
-          # Decode persistent signing key (same cert across all releases)
-          base64 -d signing/plasma.p12.b64 > /tmp/plasma.p12
-
-          # Find apksigner from pre-installed Android SDK (for v1+v2 signing)
-          APKSIGNER=""
-          ZIPALIGN=""
-          for bt in $(ls -d /usr/local/lib/android/sdk/build-tools/*/ 2>/dev/null | sort -V -r); do
-            if [ -f "${bt}apksigner" ]; then
-              APKSIGNER="${bt}apksigner"
-              ZIPALIGN="${bt}zipalign"
+          # Find newest build-tools that has aapt + d8
+          BUILD_TOOLS=""
+          for bt in $(ls -d "$ANDROID_HOME/build-tools/"*/ 2>/dev/null | sort -V -r); do
+            if [ -f "${bt}aapt" ] && [ -f "${bt}d8" ]; then
+              BUILD_TOOLS="$bt"
               break
             fi
           done
+          [ -n "$BUILD_TOOLS" ] || { echo "ERROR: build-tools with aapt+d8 not found"; exit 1; }
+          echo "build-tools: $BUILD_TOOLS"
 
-          if [ -n "$APKSIGNER" ]; then
-            echo "Using apksigner: $APKSIGNER"
-            "$ZIPALIGN" -f 4 /tmp/PlasmaLauncher-unaligned.apk /tmp/PlasmaLauncher-aligned.apk
-            "$APKSIGNER" sign \
-              --ks /tmp/plasma.p12 --ks-pass pass:plasma123 \
-              --min-sdk-version 21 \
-              --v1-signing-enabled true \
-              --v2-signing-enabled true \
-              --out system/priv-app/PlasmaLauncher/PlasmaLauncher.apk \
-              /tmp/PlasmaLauncher-aligned.apk
-          else
-            echo "apksigner not found, falling back to jarsigner (v1 only)"
-            jarsigner -keystore /tmp/plasma.p12 -storetype PKCS12 \
-              -storepass plasma123 -keypass plasma123 \
-              -sigalg SHA256withRSA -digestalg SHA-256 \
-              /tmp/PlasmaLauncher-unaligned.apk plasma
-            cp /tmp/PlasmaLauncher-unaligned.apk system/priv-app/PlasmaLauncher/PlasmaLauncher.apk
-          fi
+          # Find newest android.jar
+          ANDROID_JAR=""
+          for p in $(ls -d "$ANDROID_HOME/platforms/android-"*/ 2>/dev/null | sort -V -r); do
+            if [ -f "${p}android.jar" ]; then
+              ANDROID_JAR="${p}android.jar"
+              break
+            fi
+          done
+          [ -n "$ANDROID_JAR" ] || { echo "ERROR: android.jar not found"; exit 1; }
+          echo "android.jar: $ANDROID_JAR"
 
-          echo "APK rebuilt: $(ls -lh system/priv-app/PlasmaLauncher/PlasmaLauncher.apk)"
+          AAPT="${BUILD_TOOLS}aapt"
+          D8="${BUILD_TOOLS}d8"
+          ZIPALIGN="${BUILD_TOOLS}zipalign"
+          APKSIGNER="${BUILD_TOOLS}apksigner"
+
+          # Decode persistent signing key
+          base64 -d signing/plasma.p12.b64 > /tmp/plasma.p12
+
+          # Stage assets: aapt -A expects assets/ dir whose tree maps directly into APK assets/
+          mkdir -p /tmp/assets/plasma
+          cp launcher/index.html /tmp/assets/plasma/index.html
+
+          # 1. Compile Java source (Java 8 bytecode for d8 desugaring)
+          mkdir -p /tmp/classes
+          javac -source 8 -target 8 \
+            -classpath "$ANDROID_JAR" \
+            -d /tmp/classes \
+            launcher/java/msr/plasma/LauncherActivity.java
+
+          # 2. Dex (d8 desugars to minSdk 21)
+          mkdir -p /tmp/dex
+          find /tmp/classes -name '*.class' | xargs \
+            "$D8" --lib "$ANDROID_JAR" --min-api 21 --output /tmp/dex
+
+          # 3. Package manifest + assets into APK skeleton via aapt
+          "$AAPT" package \
+            -M launcher/AndroidManifest.xml \
+            -A /tmp/assets \
+            -I "$ANDROID_JAR" \
+            -F /tmp/plasma-res.apk
+
+          # 4. Add classes.dex to the APK
+          (cd /tmp/dex && zip -j /tmp/plasma-res.apk classes.dex)
+
+          # 5. Align and sign (v1 + v2)
+          "$ZIPALIGN" -f 4 /tmp/plasma-res.apk /tmp/plasma-aligned.apk
+          "$APKSIGNER" sign \
+            --ks /tmp/plasma.p12 --ks-pass pass:plasma123 \
+            --min-sdk-version 21 \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --out system/priv-app/PlasmaLauncher/PlasmaLauncher.apk \
+            /tmp/plasma-aligned.apk
+
+          echo "APK built from source: $(ls -lh system/priv-app/PlasmaLauncher/PlasmaLauncher.apk)"
 
       - name: Build module zip
         run: bash build.sh
