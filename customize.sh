@@ -1,5 +1,6 @@
 #!/sbin/sh
-# Sourced by update-binary during flash. Downloads fonts, wallpapers, KDE apps.
+# Sourced by update-binary during flash. Best-effort font/wallpaper download.
+# KDE apps install on first boot via service.sh (requires network post-boot).
 
 FONTS_DIR="$MODPATH/system/fonts"
 WALLS_DIR="$MODPATH/system/media/wallpapers"
@@ -14,52 +15,33 @@ try_dl() {
   return 1
 }
 
-# ── Noto Sans fonts ─────────────────────────────────────────────────────────────────
+# ── Noto Sans fonts ───────────────────────────────────────────────────────────
 ui_print "- Downloading Noto Sans fonts..."
 BASE="https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoSans"
 for v in Regular Bold Italic BoldItalic Light Medium SemiBold; do
   try_dl "${BASE}/NotoSans-${v}.ttf" "$FONTS_DIR/NotoSans-${v}.ttf" \
     && ui_print "  + NotoSans-${v}" \
-    || ui_print "  ! NotoSans-${v} skipped"
+    || ui_print "  ! NotoSans-${v} (retry on boot)"
 done
 
-# ── Plasma wallpapers ───────────────────────────────────────────────────────────────
+# ── Plasma wallpapers ─────────────────────────────────────────────────────────
 ui_print "- Downloading Plasma Mobile wallpapers..."
 W="https://cdn.kde.org/wallpapers"
-try_dl "$W/MilkyWay/contents/images/3840x2160.jpg" "$WALLS_DIR/plasma-milkyway.jpg" \
-  && ui_print "  + MilkyWay" || ui_print "  ! MilkyWay skipped"
-try_dl "$W/Volna/contents/images/3840x2160.jpg"    "$WALLS_DIR/plasma-volna.jpg"    \
-  && ui_print "  + Volna"    || ui_print "  ! Volna skipped"
-try_dl "$W/Next/contents/images/3840x2160.jpg"     "$WALLS_DIR/plasma-next.jpg"     \
-  && ui_print "  + Next"     || ui_print "  ! Next skipped"
+try_dl "$W/MilkyWay/contents/images/3840x2160.jpg"    "$WALLS_DIR/plasma-milkyway.jpg"    \
+  && ui_print "  + MilkyWay"    || ui_print "  ! MilkyWay (retry on boot)"
+try_dl "$W/Volna/contents/images/3840x2160.jpg"       "$WALLS_DIR/plasma-volna.jpg"       \
+  && ui_print "  + Volna"       || ui_print "  ! Volna (retry on boot)"
+try_dl "$W/Next/contents/images/3840x2160.jpg"        "$WALLS_DIR/plasma-next.jpg"        \
+  && ui_print "  + Next"        || ui_print "  ! Next (retry on boot)"
 try_dl "$W/EveningGlow/contents/images/3840x2160.jpg" "$WALLS_DIR/plasma-eveningglow.jpg" \
-  && ui_print "  + EveningGlow" || ui_print "  ! EveningGlow skipped"
+  && ui_print "  + EveningGlow" || ui_print "  ! EveningGlow (retry on boot)"
 
 for f in "$WALLS_DIR"/*.jpg; do
-  [ -f "$f" ] || continue
+  [ -f "$f" ] && [ -s "$f" ] || continue
   cp "$f" "$MODPATH/system/media/default_wallpaper.jpg"
   ui_print "- Default wallpaper: $(basename "$f")"
   break
 done
 
-# ── KDE Android apps ──────────────────────────────────────────────────────────────
-ui_print "- Downloading KDE Android apps..."
-
-mkdir -p "$APP_DIR/KDEConnect"
-try_dl "https://f-droid.org/repo/org.kde.kdeconnect_tp_10403.apk" \
-  "$APP_DIR/KDEConnect/KDEConnect.apk" \
-  && ui_print "  + KDE Connect" || ui_print "  ! KDE Connect skipped"
-
-mkdir -p "$APP_DIR/Kasts"
-try_dl "https://f-droid.org/repo/org.kde.kasts_21.apk" \
-  "$APP_DIR/Kasts/Kasts.apk" \
-  && ui_print "  + Kasts" || ui_print "  ! Kasts skipped"
-
-mkdir -p "$APP_DIR/Markor"
-try_dl "https://f-droid.org/repo/net.gsantner.markor_150.apk" \
-  "$APP_DIR/Markor/Markor.apk" \
-  && ui_print "  + Markor" || ui_print "  ! Markor skipped"
-
-set_perm_recursive "$APP_DIR" root root 0755 0644
-
+ui_print "- KDE Connect, Kasts, Markor will auto-install on first boot"
 ui_print "- Done. Reboot to apply."

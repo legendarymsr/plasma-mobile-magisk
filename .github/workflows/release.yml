@@ -15,31 +15,66 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Rebuild launcher APK with new UI
+      - name: Rebuild launcher APK with new UI (v1+v2 signing)
         run: |
           set -euo pipefail
+
           # Extract existing APK (has correct classes.dex + AndroidManifest)
           mkdir -p /tmp/apk
           unzip -q system/priv-app/PlasmaLauncher/PlasmaLauncher.apk -d /tmp/apk
-          # Replace HTML with latest version from source
+
+          # Replace HTML with latest from source
           mkdir -p /tmp/apk/assets/plasma
           cp launcher/index.html /tmp/apk/assets/plasma/index.html
-          # Remove old signature
+
+          # Remove old signature and repack
           rm -rf /tmp/apk/META-INF
-          # Repack
-          cd /tmp/apk && zip -r9 /tmp/PlasmaLauncher-unsigned.apk .
-          cd $GITHUB_WORKSPACE
-          # Generate signing key
-          keytool -genkeypair -keystore /tmp/plasma.jks -alias plasma \
-            -storepass plasma123 -keypass plasma123 \
+          cd /tmp/apk && zip -r9 /tmp/PlasmaLauncher-unaligned.apk .
+          cd "$GITHUB_WORKSPACE"
+
+          # Generate PKCS12 signing key (works with apksigner)
+          keytool -genkeypair \
+            -keystore /tmp/plasma.p12 -storetype PKCS12 \
+            -alias plasma -storepass plasma123 -keypass plasma123 \
             -keyalg RSA -keysize 2048 -validity 9999 \
             -dname "CN=Plasma Mobile,OU=KDE,O=legendarymsr,L=Internet,ST=Internet,C=US" \
-            2>/dev/null
-          # Sign
-          jarsigner -keystore /tmp/plasma.jks -storepass plasma123 -keypass plasma123 \
-            -sigalg SHA256withRSA -digestalg SHA-256 \
-            /tmp/PlasmaLauncher-unsigned.apk plasma
-          cp /tmp/PlasmaLauncher-unsigned.apk system/priv-app/PlasmaLauncher/PlasmaLauncher.apk
+            -noprompt
+
+          # Find apksigner from pre-installed Android SDK (for v1+v2 signing)
+          APKSIGNER=""
+          ZIPALIGN=""
+          for bt in $(ls -d /usr/local/lib/android/sdk/build-tools/*/ 2>/dev/null | sort -V -r); do
+            if [ -f "${bt}apksigner" ]; then
+              APKSIGNER="${bt}apksigner"
+              ZIPALIGN="${bt}zipalign"
+              break
+            fi
+          done
+
+          if [ -n "$APKSIGNER" ]; then
+            echo "Using apksigner: $APKSIGNER"
+            "$ZIPALIGN" -f 4 /tmp/PlasmaLauncher-unaligned.apk /tmp/PlasmaLauncher-aligned.apk
+            "$APKSIGNER" sign \
+              --ks /tmp/plasma.p12 --ks-pass pass:plasma123 \
+              --min-sdk-version 21 \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --out system/priv-app/PlasmaLauncher/PlasmaLauncher.apk \
+              /tmp/PlasmaLauncher-aligned.apk
+          else
+            echo "apksigner not found, falling back to jarsigner (v1 only)"
+            keytool -genkeypair \
+              -keystore /tmp/plasma.jks -alias plasma \
+              -storepass plasma123 -keypass plasma123 \
+              -keyalg RSA -keysize 2048 -validity 9999 \
+              -dname "CN=Plasma Mobile,OU=KDE,O=legendarymsr,L=Internet,ST=Internet,C=US" \
+              -noprompt 2>/dev/null || true
+            jarsigner -keystore /tmp/plasma.jks -storepass plasma123 -keypass plasma123 \
+              -sigalg SHA256withRSA -digestalg SHA-256 \
+              /tmp/PlasmaLauncher-unaligned.apk plasma
+            cp /tmp/PlasmaLauncher-unaligned.apk system/priv-app/PlasmaLauncher/PlasmaLauncher.apk
+          fi
+
           echo "APK rebuilt: $(ls -lh system/priv-app/PlasmaLauncher/PlasmaLauncher.apk)"
 
       - name: Build module zip
@@ -61,14 +96,15 @@ jobs:
 
             ### What's included
             - **Plasma Mobile launcher** — home screen + swipe-up app drawer, KDE Gear logo, Breeze Dark glassmorphism, clock, date, pinned apps
-            - **Noto Sans** font (downloaded at flash time)
-            - **KDE wallpapers** — MilkyWay, Volna, Next, EveningGlow (downloaded at flash time)
-            - **KDE Android apps** downloaded at flash time: KDE Connect, Kasts, Markor
-            - **Breeze Dark** system theme: dark mode, Breeze Blue accent (#3DAEE9), squircle icons, gesture nav, 0.8× animation speed
+            - **Noto Sans** font — downloads at flash time, retries on first boot
+            - **KDE wallpapers** — MilkyWay, Volna, Next, EveningGlow — retry on first boot if missed
+            - **KDE Android apps** — KDE Connect, Kasts, Markor — auto-installed on first boot via F-Droid API
+            - **Breeze Dark** system theme: dark mode, Breeze Blue accent (#3DAEE9), squircle icons, gesture nav, 0.8x animations
 
             ### After flashing
             1. Reboot
             2. If prompted, pick **Plasma Mobile** as your home app
-            3. Check `/data/local/tmp/plasma-theme.log` if theming doesn't apply
+            3. If launcher didn't switch: **Settings -> Apps -> Default apps -> Home app -> Plasma Mobile**
+            4. KDE apps install ~1 min after boot — check `/data/local/tmp/plasma-theme.log`
           files: plasma-mobile-${{ steps.ver.outputs.VERSION }}.zip
           make_latest: true
