@@ -1,17 +1,17 @@
 #!/sbin/sh
 # Plasma Mobile Theme — service.sh
-# Runs post-boot. Downloads assets, installs KDE apps, applies Breeze Dark.
+# Runs post-boot as root. Downloads assets, installs KDE apps, applies Breeze Dark.
 
 LOG=/data/local/tmp/plasma-theme.log
 log() { echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
-log "--- plasma-mobile-theme service.sh started ---"
+log "=== plasma-mobile-theme service.sh started ==="
 
 i=0
 until [ "$(getprop sys.boot_completed)" = "1" ]; do
   sleep 3; i=$((i+1))
   [ $i -gt 60 ] && log "timed out waiting for boot" && exit 1
 done
-log "boot completed — sleeping 15s"
+log "boot completed — sleeping 15s for PackageManager to settle"
 sleep 15
 
 MODDIR=${MODDIR:-/data/adb/modules/plasma-mobile-theme}
@@ -20,8 +20,14 @@ WALLS_DIR="$MODDIR/system/media/wallpapers"
 
 ONEUI_VER=$(getprop ro.build.version.oneui 2>/dev/null)
 IS_SAMSUNG=false; [ -n "$ONEUI_VER" ] && IS_SAMSUNG=true
-ANDROID_VER=$(getprop ro.build.version.sdk 2>/dev/null)
-log "OneUI=$ONEUI_VER IS_SAMSUNG=$IS_SAMSUNG SDK=$ANDROID_VER MODDIR=$MODDIR"
+SDK=$(getprop ro.build.version.sdk 2>/dev/null)
+log "OneUI=${ONEUI_VER} IS_SAMSUNG=${IS_SAMSUNG} SDK=${SDK} MODDIR=${MODDIR}"
+
+# Tail the post-fs-data log so its output appears inline here too
+[ -f /data/local/tmp/plasma-pfd.log ] \
+    && log "--- post-fs-data log ---" \
+    && cat /data/local/tmp/plasma-pfd.log >> "$LOG" 2>/dev/null \
+    && log "--- end post-fs-data log ---"
 
 # ── Download helpers ──────────────────────────────────────────────────────────
 try_dl() {
@@ -42,8 +48,7 @@ dl_first() {
 }
 
 fdroid_url() {
-  local pkg="$1"
-  local json vc
+  local pkg="$1" json vc
   json=$(curl -fsSL --connect-timeout 20 "https://f-droid.org/api/v1/packages/$pkg" 2>/dev/null) \
     || json=$(wget -qO- --timeout=20 "https://f-droid.org/api/v1/packages/$pkg" 2>/dev/null) \
     || return 1
@@ -64,55 +69,37 @@ for v in Regular Bold Italic BoldItalic Light Medium SemiBold; do
     && log "font ${v}: ok" || log "font ${v}: FAILED"
 done
 
-# ── Download missing wallpapers (multiple source fallback) ──────────────────
+# ── Download missing wallpapers ───────────────────────────────────────────────
 mkdir -p "$WALLS_DIR"
 KDE_CDN="https://cdn.kde.org/wallpapers"
 KDE_GH="https://raw.githubusercontent.com/KDE/plasma-workspace-wallpapers/master"
 
 dl_wall() {
   local name="$1"; shift
-  local dest="$WALLS_DIR/plasma-${name}.jpg"
-  dl_first "$dest" "$@" \
-    && log "wall $name: ok" || log "wall $name: FAILED"
+  dl_first "$WALLS_DIR/plasma-${name}.jpg" "$@" \
+    && log "wall ${name}: ok" || log "wall ${name}: FAILED"
 }
 
-dl_wall "next" \
-  "$KDE_CDN/Next/contents/images/3840x2160.jpg" \
-  "$KDE_GH/Next/contents/images/3840x2160.png" \
-  "$KDE_GH/Next/contents/images/3840x2160.jpg"
-
-dl_wall "volna" \
-  "$KDE_CDN/Volna/contents/images/3840x2160.jpg" \
-  "$KDE_GH/Volna/contents/images/3840x2160.jpg" \
-  "$KDE_GH/Volna/contents/images/3840x2160.png"
-
-dl_wall "milkyway" \
-  "$KDE_CDN/MilkyWay/contents/images/3840x2160.jpg" \
-  "$KDE_GH/MilkyWay/contents/images/3840x2160.jpg" \
-  "$KDE_GH/MilkyWay/contents/images/5120x2880.jpg"
-
-dl_wall "eveningglow" \
-  "$KDE_CDN/EveningGlow/contents/images/3840x2160.jpg" \
-  "$KDE_GH/EveningGlow/contents/images/3840x2160.jpg"
+dl_wall "next"        "$KDE_CDN/Next/contents/images/3840x2160.jpg"        "$KDE_GH/Next/contents/images/3840x2160.jpg"
+dl_wall "volna"       "$KDE_CDN/Volna/contents/images/3840x2160.jpg"       "$KDE_GH/Volna/contents/images/3840x2160.jpg"
+dl_wall "milkyway"    "$KDE_CDN/MilkyWay/contents/images/3840x2160.jpg"    "$KDE_GH/MilkyWay/contents/images/3840x2160.jpg"
+dl_wall "eveningglow" "$KDE_CDN/EveningGlow/contents/images/3840x2160.jpg" "$KDE_GH/EveningGlow/contents/images/3840x2160.jpg"
 
 for f in "$WALLS_DIR"/*.jpg; do
   [ -f "$f" ] && [ -s "$f" ] || continue
   cp "$f" "$MODDIR/system/media/default_wallpaper.jpg" 2>/dev/null
-  log "default wallpaper: $(basename "$f")"
-  break
+  log "default wallpaper: $(basename "$f")"; break
 done
 
-# ── Install KDE apps via F-Droid API ────────────────────────────────────────
+# ── Install KDE apps via F-Droid ──────────────────────────────────────────────
 install_fdroid_app() {
   local pkg="$1" label="$2"
-  if pm list packages 2>/dev/null | grep -q "^package:${pkg}$"; then
-    log "$label: already installed"; return 0
-  fi
+  pm list packages 2>/dev/null | grep -q "^package:${pkg}$" && { log "$label: already installed"; return 0; }
   local url apk_tmp="/data/local/tmp/${pkg}.apk"
   url=$(fdroid_url "$pkg") || { log "$label: F-Droid API failed"; return 1; }
   try_dl "$url" "$apk_tmp" || { log "$label: download failed"; return 1; }
-  pm install -r "$apk_tmp" 2>/dev/null \
-    && log "$label: installed" || log "$label: install FAILED"
+  local err; err=$(pm install -r "$apk_tmp" 2>&1) \
+    && log "$label: installed" || log "$label: install FAILED — $err"
   rm -f "$apk_tmp"
 }
 
@@ -120,41 +107,41 @@ install_fdroid_app "org.kde.kdeconnect_tp" "KDE Connect"
 install_fdroid_app "org.kde.kasts"          "Kasts"
 install_fdroid_app "net.gsantner.markor"    "Markor"
 
-# ── Apply Breeze Dark settings ────────────────────────────────────────────
-cmd uimode night yes                        && log "uimode night: ok"       || log "uimode night: FAILED"
-sp global dark_theme 1                      && log "dark_theme: ok"         || log "dark_theme: FAILED"
-sp system darkness_enabled 1                && log "darkness: ok"           || log "darkness: FAILED"
-sp secure ui_night_mode 2                   && log "ui_night_mode: ok"      || log "ui_night_mode: FAILED"
+# ── Breeze Dark system settings ───────────────────────────────────────────────
+cmd uimode night yes                        && log "uimode night: ok"   || log "uimode night: FAILED"
+sp global dark_theme 1                      && log "dark_theme: ok"     || log "dark_theme: FAILED"
+sp system darkness_enabled 1                && log "darkness: ok"       || log "darkness: FAILED"
+sp secure ui_night_mode 2                   && log "ui_night_mode: ok"  || log "ui_night_mode: FAILED"
 
 if $IS_SAMSUNG; then
-  sp secure color_preference 8              && log "samsung accent: ok"     || log "samsung accent: FAILED"
-  sp system theme_background_color 0        && log "bg color: ok"           || log "bg color: FAILED"
+  sp secure color_preference 8              && log "samsung accent: ok" || log "samsung accent: FAILED"
+  sp system theme_background_color 0        && log "bg color: ok"       || log "bg color: FAILED"
 else
-  sp system accent_color -12529943          && log "accent: ok"             || log "accent: FAILED"
+  sp system accent_color -12529943          && log "accent: ok"         || log "accent: FAILED"
 fi
 
-sp system font_scale 1.0                    && log "font_scale: ok"         || log "font_scale: FAILED"
+sp system font_scale 1.0 && log "font_scale: ok" || log "font_scale: FAILED"
 
 if $IS_SAMSUNG; then
-  sp global nav_type 0                      && log "nav gestures: ok"       || log "nav_type: FAILED"
+  sp global nav_type 0                      && log "nav gestures: ok"   || log "nav_type: FAILED"
 else
-  sp secure navigation_mode 2               && log "gesture nav: ok"        || log "nav_mode: FAILED"
+  sp secure navigation_mode 2               && log "gesture nav: ok"    || log "nav_mode: FAILED"
 fi
 
 if $IS_SAMSUNG; then
-  sp system app_icon_corner_radius 1        && log "icon squircle: ok"      || log "icon shape: FAILED"
+  sp system app_icon_corner_radius 1        && log "icon squircle: ok"  || log "icon shape: FAILED"
 else
   sp secure icon_shape_overlay_pkg_path "com.android.theme.icon.squircle" 2>/dev/null \
     || sp secure icon_shape_overlay_pkg_path "squircle" 2>/dev/null
   log "icon shape attempted"
 fi
 
-sp system status_bar_show_battery_percent 1 && log "battery pct: ok"       || log "battery pct: FAILED"
-sp global window_animation_scale 0.8        && log "anim: ok"               || log "anim: FAILED"
+sp system status_bar_show_battery_percent 1 && log "battery pct: ok"   || log "battery pct: FAILED"
+sp global window_animation_scale 0.8        && log "anim scale: ok"    || log "anim scale: FAILED"
 sp global transition_animation_scale 0.8
 sp global animator_duration_scale 0.8
 
-# ── Apply wallpaper ───────────────────────────────────────────────────────────
+# ── Wallpaper ─────────────────────────────────────────────────────────────────
 WALL="$MODDIR/system/media/default_wallpaper.jpg"
 [ -f "$WALL" ] && [ -s "$WALL" ] || WALL=/system/media/default_wallpaper.jpg
 if [ -f "$WALL" ] && [ -s "$WALL" ]; then
@@ -177,37 +164,71 @@ else
   log "wallpaper: no file found"
 fi
 
-# ── Ensure Plasma launcher is installed ────────────────────────────────────
+# ── Plasma launcher install ───────────────────────────────────────────────────
 PLASMA_PKG="msr.plasma"
-PLASMA_ACT="${PLASMA_PKG}/.LauncherActivity"
+PLASMA_FULL_ACT="${PLASMA_PKG}/msr.plasma.LauncherActivity"
+
+# Log the state of the overlay APK so we know if Magisk applied it correctly.
+_log_apk_state() {
+  local apk="$1"
+  if [ -f "$apk" ]; then
+    log "APK at $apk: $(wc -c < "$apk" 2>/dev/null || echo '?') bytes  perm=$(stat -c %a "$apk" 2>/dev/null)  ctx=$(ls -Z "$apk" 2>/dev/null | awk '{print $1}')"
+  else
+    log "APK NOT FOUND at $apk"
+  fi
+}
+_log_apk_state "/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk"
+_log_apk_state "$MODDIR/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk"
 
 _plasma_install() {
-  local apk
+  local apk err
+
   for apk in \
-    /system/priv-app/PlasmaLauncher/PlasmaLauncher.apk \
+    "/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk" \
     "$MODDIR/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk"; do
     [ -f "$apk" ] || continue
-    # Clear any stale version first (avoids INSTALL_FAILED_UPDATE_INCOMPATIBLE)
+
+    log "attempting install from $apk"
+
+    # Uninstall previous user-space record to clear any stale cert.
+    # --user 0 removes the user-visible install; the plain form tries a full
+    # remove (may fail for overlay-provided system apps, that's OK).
     pm uninstall --user 0 "$PLASMA_PKG" 2>/dev/null || true
-    pm install -r --user 0 "$apk" 2>/dev/null \
-      && log "Plasma APK installed from $apk" \
-      || log "Plasma APK install FAILED from $apk"
+    pm uninstall           "$PLASMA_PKG" 2>/dev/null || true
+
+    # Temporarily disable Play Protect / package verification — it can reject
+    # APKs it has never seen before even with root.
+    settings put global verifier_verify_adb_installs 0 2>/dev/null
+    settings put global package_verifier_enable       0 2>/dev/null
+
+    # -r  allow reinstall over existing
+    # -d  allow version downgrade (handles versionCode mismatches)
+    # -g  grant all declared runtime permissions immediately
+    err=$(pm install -r -d -g --user 0 "$apk" 2>&1) \
+      && log "install OK from $apk" \
+      || log "install FAILED from $apk — $err"
+
+    settings put global verifier_verify_adb_installs 1 2>/dev/null
+    settings put global package_verifier_enable       1 2>/dev/null
     return
   done
-  log "Plasma APK not found at any expected path"
+  log "FATAL: APK not found at any path — module zip may be malformed"
 }
 
 _suppress_stock_launchers() {
-  # On Samsung One UI, the stock launcher aggressively reclaims the HOME role
-  # on each boot unless we suppress it. pm disable-user stops it from running
-  # while keeping it recoverable (re-enable via Settings if needed).
+  # Samsung One UI launcher — the ONLY Samsung package we disable here.
+  # Do NOT touch com.samsung.android.app.aodservice (Always-On Display) or
+  # any other Samsung service — disabling unrelated apps breaks the device.
   if $IS_SAMSUNG; then
-    for pkg in com.sec.android.app.launcher com.samsung.android.app.aodservice; do
-      pm disable-user --user 0 "$pkg" 2>/dev/null \
-        && log "suppressed: $pkg" || log "suppress skipped: $pkg"
-    done
+    local err
+    err=$(pm disable-user --user 0 com.sec.android.app.launcher 2>&1) \
+      && log "Samsung launcher disabled" \
+      || log "Samsung launcher disable result: $err"
+    # pm hide prevents the package from being re-enabled by Samsung's boot agent
+    pm hide --user 0 com.sec.android.app.launcher 2>/dev/null \
+      && log "Samsung launcher hidden" || true
   fi
-  # AOSP / Pixel launchers
+  # AOSP / Pixel launchers — only if present
   for pkg in com.android.launcher3 com.google.android.apps.nexuslauncher; do
     pm list packages 2>/dev/null | grep -q "^package:${pkg}$" || continue
     pm disable-user --user 0 "$pkg" 2>/dev/null \
@@ -216,67 +237,75 @@ _suppress_stock_launchers() {
 }
 
 _plasma_set_home() {
-  local full_act="${PLASMA_PKG}/msr.plasma.LauncherActivity"
-
-  # Suppress competing launchers so they can't reclaim the HOME role on reboot
   _suppress_stock_launchers
 
-  # Android <10: preferred-activities mechanism
-  pm set-home-activity "$full_act" 2>/dev/null \
-    && log "home: pm ok" || log "home: pm FAILED"
-  pm set-home-activity --user 0 "$full_act" 2>/dev/null || true
+  local err
 
-  # Android 10+: RoleManager (same result as post-fs-data.sh but live)
-  cmd role add-role-holder android.app.role.HOME "$PLASMA_PKG" 0 2>/dev/null \
-    && log "home: role ok" || log "home: role FAILED"
+  # Android < 10: preferred-activities
+  err=$(pm set-home-activity "$PLASMA_FULL_ACT" 2>&1) \
+    && log "pm set-home-activity: ok" \
+    || log "pm set-home-activity: $err"
+  pm set-home-activity --user 0 "$PLASMA_FULL_ACT" 2>/dev/null || true
 
-  # Secure setting fallback
+  # Android 10 +: RoleManager
+  err=$(cmd role add-role-holder android.app.role.HOME "$PLASMA_PKG" 0 2>&1) \
+    && log "cmd role: ok" \
+    || log "cmd role: $err"
+
+  # Secure settings key (belt-and-suspenders)
   settings put secure default_home_package_name "$PLASMA_PKG" 2>/dev/null \
-    && log "home: settings ok" || true
+    && log "settings default_home: ok" || true
 
-  # Bring the launcher to front so Android locks it in as current home
-  am start -a android.intent.action.MAIN \
+  # Start the launcher so Android sees it as the live home process
+  err=$(am start \
+    -a android.intent.action.MAIN \
     -c android.intent.category.HOME \
-    -n "$full_act" \
-    --activity-single-top 2>/dev/null \
-    && log "home: am start ok" || log "home: am start FAILED"
+    -n "$PLASMA_FULL_ACT" \
+    --activity-single-top 2>&1) \
+    && log "am start: ok" \
+    || log "am start: $err"
 
-  log "If not switched: Settings → Apps → Default apps → Home app → Plasma Mobile"
+  log "Manual fallback: Settings → Apps → Default apps → Home app → Plasma Mobile"
 }
 
-# Phase 1: if the Magisk overlay didn't auto-install it, do an explicit install
+# ── Phase 1: install if PackageManager hasn't auto-scanned the overlay yet ─────
 if ! pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
-  log "Plasma not in package list — explicit install (overlay may need time)"
+  log "pkg absent — explicit install (Phase 1)"
   _plasma_install
 fi
 
-# Wait for the package scanner to finish (system apps can take a few seconds)
+# Wait up to 40 s for PM to finish scanning system apps
 k=0
 while ! pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; do
   sleep 2; k=$((k+1))
   [ $k -gt 20 ] && break
 done
+log "pkg scan wait: ${k}x2 s"
 
-# Phase 2: if STILL missing after waiting, one last explicit install attempt
+# ── Phase 2: last-chance install if still absent ───────────────────────────────
 if ! pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
-  log "Plasma not found after ${k}×2 s — final install attempt"
+  log "pkg still absent — final install attempt (Phase 2)"
   _plasma_install
-  sleep 4
+  sleep 5
 fi
 
+# ── Set as default home ────────────────────────────────────────────────────────
 if pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
-  log "Plasma launcher confirmed in package list"
+  log "package confirmed — setting as default home"
   _plasma_set_home
 else
-  log "Plasma launcher NOT found — check /sdcard/Download/plasma-theme.log"
+  log "FATAL: package still absent after all install attempts"
+  log "Check /sdcard/Download/plasma-theme.log for the pm install error line"
 fi
 
+# ── KDE Connect ───────────────────────────────────────────────────────────────
 if pm list packages 2>/dev/null | grep -q "org.kde.kdeconnect_tp"; then
   am startservice -n org.kde.kdeconnect_tp/.core.NetworkPacketFetcherProvider 2>/dev/null \
-    && log "KDE Connect started" || log "KDE Connect: FAILED"
+    && log "KDE Connect started" || log "KDE Connect start FAILED"
 fi
 
+# ── Copy log to accessible location ──────────────────────────────────────────
 mkdir -p /sdcard/Download 2>/dev/null
-cp "$LOG" /sdcard/Download/plasma-theme.log 2>/dev/null && log "log copied to /sdcard/Download/"
+cp "$LOG" /sdcard/Download/plasma-theme.log 2>/dev/null && log "log → /sdcard/Download/"
 
-log "--- done ---"
+log "=== done ==="
