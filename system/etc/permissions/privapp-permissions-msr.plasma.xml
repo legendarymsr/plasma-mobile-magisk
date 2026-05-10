@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<permissions>
+    <privapp-permissions package="msr.plasma">
+        <permission name="android.permission.EXPAND_STATUS_BAR"/>
+        <permission name="android.permission.QUERY_ALL_PACKAGES"/>
+        <permission name="android.permission.CHANGE_CONFIGURATION"/>
+        <permission name="android.permission.SET_WALLPAPER"/>
+        <permission name="android.permission.WRITE_SETTINGS"/>
+    </privapp-permissions>
+</permissions>
