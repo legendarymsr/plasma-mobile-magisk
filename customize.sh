@@ -1,11 +1,11 @@
 #!/sbin/sh
-# Runs inside Magisk's installer during flash.
+# Runs inside Magisk's installer during flash (sourced by update-binary).
 # Downloads Noto Sans fonts and Plasma Mobile wallpapers.
 
 FONTS_DIR="$MODPATH/system/fonts"
 WALLS_DIR="$MODPATH/system/media/wallpapers"
 
-ui_print() { echo "$1"; }
+mkdir -p "$FONTS_DIR" "$WALLS_DIR"
 
 try_dl() {
   local url="$1" dest="$2"
