@@ -2,14 +2,9 @@ name: Build & Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - master
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Release tag (e.g. v1.0.0)'
-        required: true
-        default: 'v1.0.0'
 
 jobs:
   release:
@@ -20,29 +15,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set tag name
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "TAG=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          fi
-
       - name: Build zip
         run: bash build.sh
 
-      - name: Get zip name
-        id: zip
-        run: echo "NAME=$(ls plasma-mobile-*.zip)" >> $GITHUB_OUTPUT
+      - name: Read version
+        id: ver
+        run: echo "VERSION=$(grep '^version=' module.prop | cut -d= -f2)" >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Release
+      - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.TAG }}
-          name: Plasma Mobile Theme ${{ steps.tag.outputs.TAG }}
+          tag_name: ${{ steps.ver.outputs.VERSION }}
+          name: Plasma Mobile Theme ${{ steps.ver.outputs.VERSION }}
           body: |
             Flash via Magisk Manager. Requires Magisk v20.4+.
             Applies Breeze dark theme, Noto Sans font, and Plasma Mobile launcher.
-          files: ${{ steps.zip.outputs.NAME }}
+          files: plasma-mobile-${{ steps.ver.outputs.VERSION }}.zip
           make_latest: true
