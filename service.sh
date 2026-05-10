@@ -183,6 +183,8 @@ PLASMA_ACT="${PLASMA_PKG}/.LauncherActivity"
 
 if ! pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
   log "Plasma not in package list — trying explicit install"
+  # Uninstall any stale version first (avoids INSTALL_FAILED_UPDATE_INCOMPATIBLE)
+  pm uninstall --user 0 "$PLASMA_PKG" 2>/dev/null || true
   for apk in \
     /system/priv-app/PlasmaLauncher/PlasmaLauncher.apk \
     "$MODDIR/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk"; do

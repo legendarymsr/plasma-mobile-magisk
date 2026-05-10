@@ -32,13 +32,8 @@ jobs:
           cd /tmp/apk && zip -r9 /tmp/PlasmaLauncher-unaligned.apk .
           cd "$GITHUB_WORKSPACE"
 
-          # Generate PKCS12 signing key (works with apksigner)
-          keytool -genkeypair \
-            -keystore /tmp/plasma.p12 -storetype PKCS12 \
-            -alias plasma -storepass plasma123 -keypass plasma123 \
-            -keyalg RSA -keysize 2048 -validity 9999 \
-            -dname "CN=Plasma Mobile,OU=KDE,O=legendarymsr,L=Internet,ST=Internet,C=US" \
-            -noprompt
+          # Decode persistent signing key (same cert across all releases)
+          base64 -d signing/plasma.p12.b64 > /tmp/plasma.p12
 
           # Find apksigner from pre-installed Android SDK (for v1+v2 signing)
           APKSIGNER=""
@@ -63,13 +58,8 @@ jobs:
               /tmp/PlasmaLauncher-aligned.apk
           else
             echo "apksigner not found, falling back to jarsigner (v1 only)"
-            keytool -genkeypair \
-              -keystore /tmp/plasma.jks -alias plasma \
+            jarsigner -keystore /tmp/plasma.p12 -storetype PKCS12 \
               -storepass plasma123 -keypass plasma123 \
-              -keyalg RSA -keysize 2048 -validity 9999 \
-              -dname "CN=Plasma Mobile,OU=KDE,O=legendarymsr,L=Internet,ST=Internet,C=US" \
-              -noprompt 2>/dev/null || true
-            jarsigner -keystore /tmp/plasma.jks -storepass plasma123 -keypass plasma123 \
               -sigalg SHA256withRSA -digestalg SHA-256 \
               /tmp/PlasmaLauncher-unaligned.apk plasma
             cp /tmp/PlasmaLauncher-unaligned.apk system/priv-app/PlasmaLauncher/PlasmaLauncher.apk
