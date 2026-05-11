@@ -86,18 +86,44 @@ public class LauncherActivity extends Activity {
         mWebView.loadUrl("file:///android_asset/plasma/index.html");
 
         applyImmersive();
+
+        // Root layer: switch to gesture navigation (eliminates 3-button bar permanently)
+        // then restart SystemUI to pick up the change. Belt-and-suspenders: also apply
+        // policy_control for immediate immersive effect before SystemUI restarts.
+        new Thread(new Runnable() {
+            public void run() {
+                rootExec("settings put secure navigation_mode 2");
+                rootExec("killall com.android.systemui");
+                rootExec("settings put global policy_control immersive.full=*");
+                rootExec("am broadcast -a android.intent.action.USER_PRESENT");
+            }
+        }).start();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         applyImmersive();
+        new Thread(new Runnable() {
+            public void run() {
+                rootExec("settings put global policy_control immersive.full=*");
+                rootExec("am broadcast -a android.intent.action.USER_PRESENT");
+            }
+        }).start();
     }
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) applyImmersive();
+        if (hasFocus) {
+            applyImmersive();
+            new Thread(new Runnable() {
+                public void run() {
+                    rootExec("settings put global policy_control immersive.full=*");
+                    rootExec("am broadcast -a android.intent.action.USER_PRESENT");
+                }
+            }).start();
+        }
     }
 
     @SuppressWarnings("deprecation")
@@ -121,6 +147,15 @@ public class LauncherActivity extends Activity {
                     android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
             }
         }
+    }
+
+    // Executes a root shell command synchronously. Uses waitFor() so callers
+    // running sequential commands (e.g. settings put then killall) get ordering.
+    private void rootExec(String cmd) {
+        try {
+            Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", cmd});
+            p.waitFor();
+        } catch (Exception ignored) {}
     }
 
     @Override
@@ -276,6 +311,16 @@ public class LauncherActivity extends Activity {
         public int getStatusBarHeight() {
             int id = getResources().getIdentifier("status_bar_height", "dimen", "android");
             return id > 0 ? getResources().getDimensionPixelSize(id) : 0;
+        }
+
+        @JavascriptInterface
+        public void resetNavBar() {
+            new Thread(new Runnable() {
+                public void run() {
+                    rootExec("settings put secure navigation_mode 0");
+                    rootExec("killall com.android.systemui");
+                }
+            }).start();
         }
 
         private void sendShelfApps(final PackageManager pm) {

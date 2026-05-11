@@ -18,7 +18,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:'Noto Sans',system-
 #wallpaper::after{content:'';position:absolute;inset:0;
   background:radial-gradient(ellipse 90% 55% at 65% 25%,rgba(61,174,233,.13) 0%,transparent 70%)}
 #home{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;
-  padding-top:var(--status-height,0px);transition:opacity .32s,transform .32s}
+  padding-top:0;transition:opacity .32s,transform .32s}
 #home.hidden{opacity:0;pointer-events:none;transform:translateY(-32px)}
 #statusbar{width:100%;display:flex;justify-content:space-between;align-items:center;
   padding:10px 20px 0;height:42px}
@@ -45,7 +45,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:'Noto Sans',system-
 .pin-ic img{width:28px;height:28px;border-radius:6px;object-fit:contain}
 .pin span{font-size:10px;color:var(--muted)}
 #swipe-hint{display:flex;flex-direction:column;align-items:center;gap:3px;
-  padding-bottom:calc(var(--nav-height,10px) + 6px);
+  padding-bottom:12px;
   color:var(--muted);font-size:10px;letter-spacing:.6px;cursor:pointer;
   animation:bob 2.6s ease-in-out infinite}
 #swipe-hint svg{width:20px;height:20px;fill:var(--muted)}
@@ -78,7 +78,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:'Noto Sans',system-
 #nores{grid-column:1/-1;text-align:center;color:var(--muted);padding:48px 0;font-size:14px}
 #loading-msg{grid-column:1/-1;text-align:center;color:var(--muted);padding:48px 0;font-size:14px}
 #shelf{display:flex;justify-content:space-around;align-items:center;flex-shrink:0;
-  padding:10px 20px calc(10px + var(--nav-height,0px));
+  padding:10px 20px 12px;
   border-top:1px solid var(--border);background:var(--panel)}
 .nb{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;
   justify-content:center;cursor:pointer;transition:background .15s}
@@ -170,7 +170,7 @@ document.addEventListener('touchend',function(e){
   else if(dy<-55&&dx<90){if(drawerOpen)closeDrawer();}
 },{passive:true});
 
-// ── App list state ───────────────────────────────────────────────────────────────────────────────────
+// ── App list state ────────────────────────────────────────────────────────────────────────────────────
 var apps=[];
 var appsLoaded=false;
 var iconCache={};   // pkg → base64 PNG string
