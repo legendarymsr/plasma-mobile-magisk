@@ -74,6 +74,20 @@ public class LauncherActivity extends Activity {
         mWebView.setLayoutParams(new ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT));
+        // Force WebView to real display dimensions — Samsung WM pre-subtracts the nav bar
+        // from window bounds (1080x2546 instead of 1080x2640) before immersive applies.
+        // getRealSize() returns the physical panel size and ignores WM allocation.
+        getWindow().getDecorView().post(new Runnable() {
+            @SuppressWarnings("deprecation")
+            public void run() {
+                android.view.Display display = getWindowManager().getDefaultDisplay();
+                android.graphics.Point size = new android.graphics.Point();
+                display.getRealSize(size);
+                mWebView.getLayoutParams().height = size.y;
+                mWebView.getLayoutParams().width = size.x;
+                mWebView.requestLayout();
+            }
+        });
         setContentView(mWebView);
 
         WebSettings ws = mWebView.getSettings();
@@ -87,15 +101,56 @@ public class LauncherActivity extends Activity {
 
         applyImmersive();
 
-        // Root layer: switch to gesture navigation (eliminates 3-button bar permanently)
-        // then restart SystemUI to pick up the change. Belt-and-suspenders: also apply
-        // policy_control for immediate immersive effect before SystemUI restarts.
+        // Root layer — 4-step sequence to eliminate nav bar at system level.
+        // Samsung WM pre-subtracts nav bar from window bounds before immersive applies;
+        // only removing the bar via root bypasses that pre-subtraction.
         new Thread(new Runnable() {
             public void run() {
-                rootExec("settings put secure navigation_mode 2");
-                rootExec("killall com.android.systemui");
-                rootExec("settings put global policy_control immersive.full=*");
-                rootExec("am broadcast -a android.intent.action.USER_PRESENT");
+                java.io.PrintWriter log = null;
+                try {
+                    log = new java.io.PrintWriter(
+                        new java.io.FileWriter("/data/local/tmp/plasma-nav.log", true));
+                    log.println("[" + System.currentTimeMillis() + "] plasma-mobile nav-hide start");
+                    log.flush();
+
+                    // Step 1: switch to gesture navigation
+                    Process p = Runtime.getRuntime().exec(new String[]{"su", "-c",
+                        "cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.gestural"});
+                    log.println("step1a (gestural overlay) exit=" + p.waitFor());
+                    log.flush();
+                    Thread.sleep(500);
+
+                    p = Runtime.getRuntime().exec(new String[]{"su", "-c",
+                        "settings put secure navigation_mode 2"});
+                    log.println("step1b (navigation_mode 2) exit=" + p.waitFor());
+                    log.flush();
+
+                    // Step 2: force immersive for all apps via policy_control
+                    p = Runtime.getRuntime().exec(new String[]{"su", "-c",
+                        "settings put global policy_control immersive.full=*"});
+                    log.println("step2 (policy_control) exit=" + p.waitFor());
+                    log.flush();
+
+                    // Step 3: restart SystemUI to apply nav mode change
+                    p = Runtime.getRuntime().exec(new String[]{"su", "-c",
+                        "killall com.android.systemui"});
+                    log.println("step3 (killall systemui) exit=" + p.waitFor());
+                    log.flush();
+
+                    log.println("step4: sleeping 2000ms then re-applying window flags");
+                } catch (Exception e) {
+                    if (log != null) {
+                        log.println("ERROR: " + e);
+                        log.flush();
+                    }
+                } finally {
+                    if (log != null) log.close();
+                }
+                // Step 4: re-apply window flags after SystemUI has restarted
+                try { Thread.sleep(2000); } catch (Exception ignored) {}
+                mMainHandler.post(new Runnable() {
+                    public void run() { applyImmersive(); }
+                });
             }
         }).start();
     }
@@ -315,6 +370,16 @@ public class LauncherActivity extends Activity {
 
         @JavascriptInterface
         public void resetNavBar() {
+            new Thread(new Runnable() {
+                public void run() {
+                    rootExec("settings put secure navigation_mode 0");
+                    rootExec("killall com.android.systemui");
+                }
+            }).start();
+        }
+
+        @JavascriptInterface
+        public void restoreNavBar() {
             new Thread(new Runnable() {
                 public void run() {
                     rootExec("settings put secure navigation_mode 0");
