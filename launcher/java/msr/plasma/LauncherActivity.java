@@ -2,6 +2,7 @@ package msr.plasma;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -27,7 +28,13 @@ import android.webkit.WebViewClient;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -101,58 +108,107 @@ public class LauncherActivity extends Activity {
 
         applyImmersive();
 
-        // Root layer — 4-step sequence to eliminate nav bar at system level.
-        // Samsung WM pre-subtracts nav bar from window bounds before immersive applies;
-        // only removing the bar via root bypasses that pre-subtraction.
-        new Thread(new Runnable() {
-            public void run() {
-                java.io.PrintWriter log = null;
-                try {
-                    log = new java.io.PrintWriter(
-                        new java.io.FileWriter("/data/local/tmp/plasma-nav.log", true));
-                    log.println("[" + System.currentTimeMillis() + "] plasma-mobile nav-hide start");
-                    log.flush();
-
-                    // Step 1: switch to gesture navigation
-                    Process p = Runtime.getRuntime().exec(new String[]{"su", "-c",
-                        "cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.gestural"});
-                    log.println("step1a (gestural overlay) exit=" + p.waitFor());
-                    log.flush();
-                    Thread.sleep(500);
-
-                    p = Runtime.getRuntime().exec(new String[]{"su", "-c",
-                        "settings put secure navigation_mode 2"});
-                    log.println("step1b (navigation_mode 2) exit=" + p.waitFor());
-                    log.flush();
-
-                    // Step 2: force immersive for all apps via policy_control
-                    p = Runtime.getRuntime().exec(new String[]{"su", "-c",
-                        "settings put global policy_control immersive.full=*"});
-                    log.println("step2 (policy_control) exit=" + p.waitFor());
-                    log.flush();
-
-                    // Step 3: restart SystemUI to apply nav mode change
-                    p = Runtime.getRuntime().exec(new String[]{"su", "-c",
-                        "killall com.android.systemui"});
-                    log.println("step3 (killall systemui) exit=" + p.waitFor());
-                    log.flush();
-
-                    log.println("step4: sleeping 2000ms then re-applying window flags");
-                } catch (Exception e) {
-                    if (log != null) {
-                        log.println("ERROR: " + e);
+        // Root layer — persistent su shell drives all nav-hide commands in one session.
+        // Only runs once per install; subsequent launches skip via SharedPreferences guard.
+        // Log file is opened FIRST so every failure path is captured.
+        final SharedPreferences prefs = getSharedPreferences("plasma", MODE_PRIVATE);
+        if (!prefs.getBoolean("nav_root_applied", false)) {
+            new Thread(new Runnable() {
+                public void run() {
+                    PrintWriter log = null;
+                    try {
+                        new File("/data/local/tmp").mkdirs();
+                        log = new PrintWriter(
+                            new FileWriter("/data/local/tmp/plasma-nav.log", true));
+                        log.println("[" + System.currentTimeMillis() + "] plasma-mobile nav-hide start");
                         log.flush();
+
+                        String suPath = findSu();
+                        log.println("su=" + (suPath != null ? suPath : "NOT FOUND"));
+                        log.flush();
+
+                        if (suPath == null) {
+                            log.println("aborting: su not found in any candidate path");
+                            return;
+                        }
+
+                        // One persistent su shell — avoids repeated su grant prompts and
+                        // eliminates the overhead of separate exec() calls per command.
+                        Process suProc = Runtime.getRuntime().exec(suPath);
+                        final DataOutputStream os =
+                            new DataOutputStream(suProc.getOutputStream());
+                        final BufferedReader outReader =
+                            new BufferedReader(new InputStreamReader(suProc.getInputStream()));
+                        final BufferedReader errReader =
+                            new BufferedReader(new InputStreamReader(suProc.getErrorStream()));
+
+                        os.writeBytes("cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.gestural\n");
+                        os.writeBytes("echo DONE_1\n");
+                        os.writeBytes("settings put secure navigation_mode 2\n");
+                        os.writeBytes("echo DONE_2\n");
+                        os.writeBytes("settings put global policy_control immersive.full=*\n");
+                        os.writeBytes("echo DONE_3\n");
+                        os.writeBytes("wm overscan 0,0,0,0\n");
+                        os.writeBytes("echo DONE_4\n");
+                        os.writeBytes("killall com.android.systemui\n");
+                        os.writeBytes("echo DONE_5\n");
+                        os.writeBytes("exit\n");
+                        os.flush();
+
+                        // Drain stdout/stderr in separate threads to prevent pipe buffer
+                        // deadlock when command output exceeds the OS pipe buffer size.
+                        final PrintWriter fLog = log;
+                        Thread outThread = new Thread(new Runnable() {
+                            public void run() {
+                                try {
+                                    String line;
+                                    while ((line = outReader.readLine()) != null) {
+                                        fLog.println("OUT: " + line);
+                                        fLog.flush();
+                                    }
+                                } catch (Exception ignored) {}
+                            }
+                        });
+                        Thread errThread = new Thread(new Runnable() {
+                            public void run() {
+                                try {
+                                    String line;
+                                    while ((line = errReader.readLine()) != null) {
+                                        fLog.println("ERR: " + line);
+                                        fLog.flush();
+                                    }
+                                } catch (Exception ignored) {}
+                            }
+                        });
+                        outThread.start();
+                        errThread.start();
+
+                        int exit = suProc.waitFor();
+                        outThread.join(3000);
+                        errThread.join(3000);
+
+                        log.println("exit=" + exit);
+                        log.flush();
+
+                        prefs.edit().putBoolean("nav_root_applied", true).apply();
+                        log.println("nav_root_applied saved");
+                    } catch (Throwable t) {
+                        if (log != null) {
+                            log.println("FATAL: " + t.getClass().getName() + ": " + t.getMessage());
+                            t.printStackTrace(log);
+                            log.flush();
+                        }
+                    } finally {
+                        if (log != null) log.close();
                     }
-                } finally {
-                    if (log != null) log.close();
+                    // Re-apply window flags after SystemUI has restarted
+                    try { Thread.sleep(2000); } catch (Exception ignored) {}
+                    mMainHandler.post(new Runnable() {
+                        public void run() { applyImmersive(); }
+                    });
                 }
-                // Step 4: re-apply window flags after SystemUI has restarted
-                try { Thread.sleep(2000); } catch (Exception ignored) {}
-                mMainHandler.post(new Runnable() {
-                    public void run() { applyImmersive(); }
-                });
-            }
-        }).start();
+            }).start();
+        }
     }
 
     @Override
@@ -204,11 +260,29 @@ public class LauncherActivity extends Activity {
         }
     }
 
-    // Executes a root shell command synchronously. Uses waitFor() so callers
-    // running sequential commands (e.g. settings put then killall) get ordering.
+    // Scans known Magisk su install locations in order. Returns the first
+    // executable found, or null if su is not present at any candidate path.
+    private String findSu() {
+        String[] candidates = {
+            "/system/bin/su",
+            "/sbin/su",
+            "/su/bin/su",
+            "/magisk/.core/bin/su",
+            "/data/adb/magisk/su"
+        };
+        for (String path : candidates) {
+            if (new File(path).exists()) return path;
+        }
+        return null;
+    }
+
+    // Executes a single root command using the located su binary.
+    // Uses waitFor() for sequential ordering across callers.
     private void rootExec(String cmd) {
+        String su = findSu();
+        if (su == null) return;
         try {
-            Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", cmd});
+            Process p = Runtime.getRuntime().exec(new String[]{su, "-c", cmd});
             p.waitFor();
         } catch (Exception ignored) {}
     }
