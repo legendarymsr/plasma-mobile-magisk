@@ -15,6 +15,7 @@ import android.os.Looper;
 import android.util.Base64;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
@@ -44,22 +45,23 @@ public class LauncherActivity extends Activity {
 
         requestWindowFeature(Window.FEATURE_NO_TITLE);
 
-        // Transparent bars so the theme's translucent flags actually show through
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        // FLAG_LAYOUT_NO_LIMITS extends the window beyond nav/status bar boundaries.
+        // Required on Samsung One UI 7 HOME activities where IMMERSIVE_STICKY alone
+        // leaves a black gap at the bottom equal to the nav bar height.
+        getWindow().addFlags(
+            WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS |
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(Color.TRANSPARENT);
-
-        // Black prevents white flash while WebView loads
         getWindow().getDecorView().setBackgroundColor(Color.BLACK);
 
-        // Re-hide bars whenever Samsung's shell briefly un-hides them
+        // Re-hide bars unconditionally on any visibility change — Samsung's shell
+        // re-shows them on every activity transition, focus change, and rotation.
         getWindow().getDecorView().setOnSystemUiVisibilityChangeListener(
             new View.OnSystemUiVisibilityChangeListener() {
                 @Override
                 public void onSystemUiVisibilityChange(int visibility) {
-                    if ((visibility & View.SYSTEM_UI_FLAG_FULLSCREEN) == 0) {
-                        applyImmersive();
-                    }
+                    applyImmersive();
                 }
             }
         );
@@ -68,8 +70,10 @@ public class LauncherActivity extends Activity {
 
         mWebView = new WebView(this);
         mWebView.setBackgroundColor(Color.BLACK);
-        // Prevent Android from adding inset padding — the WebView must fill the full screen
         mWebView.setFitsSystemWindows(false);
+        mWebView.setLayoutParams(new ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(mWebView);
 
         WebSettings ws = mWebView.getSettings();
@@ -80,19 +84,26 @@ public class LauncherActivity extends Activity {
         mWebView.setWebChromeClient(new WebChromeClient());
         mWebView.addJavascriptInterface(new PlasmaJS(), "Android");
         mWebView.loadUrl("file:///android_asset/plasma/index.html");
+
+        applyImmersive();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        applyImmersive();
     }
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        // Called every time the launcher comes to foreground — Samsung needs this
         if (hasFocus) applyImmersive();
     }
 
     @SuppressWarnings("deprecation")
     private void applyImmersive() {
-        // Layer 1: legacy systemUiVisibility — Samsung One UI 7 HOME activities ignore
-        // WindowInsetsController alone; both layers must be set simultaneously.
+        // Layer 1: legacy systemUiVisibility — required on Samsung One UI 7 HOME
+        // activities because WindowInsetsController alone is ignored there.
         int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                 | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
@@ -101,7 +112,7 @@ public class LauncherActivity extends Activity {
                 | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
         getWindow().getDecorView().setSystemUiVisibility(flags);
 
-        // Layer 2: WindowInsetsController (Android 11+) for forward-compatibility
+        // Layer 2: WindowInsetsController (API 30+) applied simultaneously.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             android.view.WindowInsetsController wic = getWindow().getInsetsController();
             if (wic != null) {
@@ -136,11 +147,9 @@ public class LauncherActivity extends Activity {
             final Intent launchIntent = new Intent(Intent.ACTION_MAIN);
             launchIntent.addCategory(Intent.CATEGORY_LAUNCHER);
 
-            // If the background thread hasn't called renderApps within 3 s, unblock the UI
             mMainHandler.postDelayed(new Runnable() {
                 public void run() {
-                    mWebView.evaluateJavascript(
-                        "if(!appsLoaded)renderApps([])", null);
+                    mWebView.evaluateJavascript("if(!appsLoaded)renderApps([])", null);
                 }
             }, 3000);
 
@@ -169,7 +178,7 @@ public class LauncherActivity extends Activity {
                                 o.put("pkg", pkg);
                                 o.put("label", label);
                                 arr.put(o);
-                            } catch (Exception ignored) { /* skip */ }
+                            } catch (Exception ignored) {}
                         }
                         final String json = sortByLabel(arr).toString();
                         mMainHandler.post(new Runnable() {
@@ -178,13 +187,11 @@ public class LauncherActivity extends Activity {
                             }
                         });
                         sendShelfApps(pm);
-                    } catch (Exception ignored) { /* ignored */ }
+                    } catch (Exception ignored) {}
                 }
             });
         }
 
-        // Called by JavaScript for each app card that needs an icon.
-        // Encodes a single icon on a pool thread and calls back renderAppIcon(pkg, b64).
         @JavascriptInterface
         public void getAppIcon(final String pkg) {
             mIconPool.submit(new Runnable() {
@@ -194,7 +201,7 @@ public class LauncherActivity extends Activity {
                     mMainHandler.post(new Runnable() {
                         public void run() {
                             mWebView.evaluateJavascript(
-                                "renderAppIcon(" + jsonStr(pkg) + "," + jsonStr(b64) + ")", null);
+                                "renderAppIcon(\"" + pkg + "\",\"" + b64 + "\")", null);
                         }
                     });
                 }
@@ -208,8 +215,12 @@ public class LauncherActivity extends Activity {
                 if (intent != null) {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     startActivity(intent);
+                    return;
                 }
-            } catch (Exception ignored) { /* ignored */ }
+            } catch (Exception ignored) {}
+            try {
+                Runtime.getRuntime().exec("am start -n " + pkg);
+            } catch (Exception ignored) {}
         }
 
         @JavascriptInterface
@@ -231,10 +242,16 @@ public class LauncherActivity extends Activity {
         public void openRecents() {
             mMainHandler.post(new Runnable() {
                 public void run() {
-                    mWebView.dispatchKeyEvent(
-                        new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_APP_SWITCH));
-                    mWebView.dispatchKeyEvent(
-                        new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_APP_SWITCH));
+                    try {
+                        mWebView.dispatchKeyEvent(
+                            new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_APP_SWITCH));
+                        mWebView.dispatchKeyEvent(
+                            new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_APP_SWITCH));
+                    } catch (Exception ignored) {
+                        try {
+                            Runtime.getRuntime().exec("input keyevent KEYCODE_APP_SWITCH");
+                        } catch (Exception e) {}
+                    }
                 }
             });
         }
@@ -261,7 +278,6 @@ public class LauncherActivity extends Activity {
             return id > 0 ? getResources().getDimensionPixelSize(id) : 0;
         }
 
-        // Shelf apps (max 5) are small enough to encode icons eagerly
         private void sendShelfApps(final PackageManager pm) {
             final String[] pkgs = {
                 "com.samsung.android.dialer", "com.android.dialer",
@@ -283,7 +299,7 @@ public class LauncherActivity extends Activity {
                         o.put("label", labels[i]);
                         o.put("icon", iconToBase64(pm, pkgs[i]));
                         arr.put(o);
-                    } catch (PackageManager.NameNotFoundException ignored) { /* not installed */ }
+                    } catch (PackageManager.NameNotFoundException ignored) {}
                 }
                 if (arr.length() == 0) return;
                 final String json = arr.toString();
@@ -292,17 +308,15 @@ public class LauncherActivity extends Activity {
                         mWebView.evaluateJavascript("renderShelfApps(" + json + ")", null);
                     }
                 });
-            } catch (Exception ignored) { /* ignored */ }
+            } catch (Exception ignored) {}
         }
 
         private String iconToBase64(PackageManager pm, String pkg) {
             try {
                 Drawable d = pm.getApplicationIcon(pkg);
-                int w = d.getIntrinsicWidth()  > 0 ? d.getIntrinsicWidth()  : 48;
-                int h = d.getIntrinsicHeight() > 0 ? d.getIntrinsicHeight() : 48;
-                Bitmap bm = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                Bitmap bm = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888);
                 Canvas c = new Canvas(bm);
-                d.setBounds(0, 0, w, h);
+                d.setBounds(0, 0, 96, 96);
                 d.draw(c);
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
                 bm.compress(Bitmap.CompressFormat.PNG, 80, bos);
@@ -311,10 +325,6 @@ public class LauncherActivity extends Activity {
             } catch (Exception e) {
                 return "";
             }
-        }
-
-        private String jsonStr(String s) {
-            return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
         }
 
         private JSONArray sortByLabel(JSONArray arr) {
@@ -331,7 +341,7 @@ public class LauncherActivity extends Activity {
                         }
                     }
                 }
-            } catch (Exception ignored) { /* return as-is */ }
+            } catch (Exception ignored) {}
             return arr;
         }
     }
