@@ -264,6 +264,7 @@ public class LauncherActivity extends Activity {
     // executable found, or null if su is not present at any candidate path.
     private String findSu() {
         String[] candidates = {
+            "/debug_ramdisk/su",
             "/system/bin/su",
             "/sbin/su",
             "/su/bin/su",
