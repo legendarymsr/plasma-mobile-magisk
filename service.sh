@@ -219,14 +219,15 @@ _suppress_stock_launchers() {
   # Samsung One UI launcher — the ONLY Samsung package we disable here.
   # Do NOT touch com.samsung.android.app.aodservice (Always-On Display) or
   # any other Samsung service — disabling unrelated apps breaks the device.
+  # NOTE: only disable-user, never pm hide. pm hide also clears the package
+  # from Settings > Apps (unless "show system" + "show hidden" are toggled),
+  # which makes it look uninstalled and is much harder for a user to reverse.
+  # disable-user is fully reversible with `pm enable` or restoreOneUIHome().
   if $IS_SAMSUNG; then
     local err
     err=$(pm disable-user --user 0 com.sec.android.app.launcher 2>&1) \
       && log "Samsung launcher disabled" \
       || log "Samsung launcher disable result: $err"
-    # pm hide prevents the package from being re-enabled by Samsung's boot agent
-    pm hide --user 0 com.sec.android.app.launcher 2>/dev/null \
-      && log "Samsung launcher hidden" || true
   fi
   # AOSP / Pixel launchers — only if present
   for pkg in com.android.launcher3 com.google.android.apps.nexuslauncher; do

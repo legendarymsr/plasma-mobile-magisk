@@ -463,6 +463,22 @@ public class LauncherActivity extends Activity {
             }).start();
         }
 
+        // Re-enables Samsung's stock launcher and hands the HOME role back to it.
+        // Counterpart to _suppress_stock_launchers() in service.sh — lets a user
+        // back out of Plasma Mobile entirely without re-flashing or using adb.
+        @JavascriptInterface
+        public void restoreOneUIHome() {
+            new Thread(new Runnable() {
+                public void run() {
+                    rootExec("pm enable com.sec.android.app.launcher");
+                    rootExec("cmd role remove-role-holder android.app.role.HOME " + getPackageName() + " 0");
+                    rootExec("cmd role add-role-holder android.app.role.HOME com.sec.android.app.launcher 0");
+                    rootExec("pm set-home-activity com.sec.android.app.launcher/.activities.LauncherActivity");
+                    rootExec("killall com.android.systemui");
+                }
+            }).start();
+        }
+
         private void sendShelfApps(final PackageManager pm) {
             final String[] pkgs = {
                 "com.samsung.android.dialer", "com.android.dialer",
