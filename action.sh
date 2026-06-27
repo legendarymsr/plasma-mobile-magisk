@@ -34,6 +34,17 @@ else
   done
 fi
 
+# ── Repair Samsung One UI launcher ────────────────────────────────────────────
+# Earlier module versions ran `pm hide` on it, which also clears it from
+# Settings > Apps. Undo that here so tapping this action repairs it immediately
+# without waiting for a reboot.
+err=$(pm unhide --user 0 com.sec.android.app.launcher 2>&1) \
+  && log "+ Samsung launcher unhidden" \
+  || log "  Samsung launcher unhide: $err"
+err=$(pm enable --user 0 com.sec.android.app.launcher 2>&1) \
+  && log "+ Samsung launcher enabled" \
+  || log "  Samsung launcher enable: $err"
+
 # ── Set as default home ───────────────────────────────────────────────────────
 err=$(pm set-home-activity "$PLASMA_FULL_ACT" 2>&1) \
   && log "+ pm set-home-activity: ok" \

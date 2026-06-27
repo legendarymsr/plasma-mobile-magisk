@@ -215,30 +215,31 @@ _plasma_install() {
   log "FATAL: APK not found at any path — module zip may be malformed"
 }
 
-_suppress_stock_launchers() {
-  # Samsung One UI launcher — the ONLY Samsung package we disable here.
-  # Do NOT touch com.samsung.android.app.aodservice (Always-On Display) or
-  # any other Samsung service — disabling unrelated apps breaks the device.
-  # NOTE: only disable-user, never pm hide. pm hide also clears the package
-  # from Settings > Apps (unless "show system" + "show hidden" are toggled),
-  # which makes it look uninstalled and is much harder for a user to reverse.
-  # disable-user is fully reversible with `pm enable` or restoreOneUIHome().
+_repair_oneui_home() {
+  # Earlier module versions ran `pm hide`/`pm disable-user` on stock launchers,
+  # and `pm hide` also clears the package from Settings > Apps, making it look
+  # uninstalled. Neither is done by this module anymore — but devices that
+  # already got hidden/disabled by an older version need this repair step,
+  # since simply not calling pm hide/disable going forward cannot undo past
+  # state. Always run, every boot, until uninstalled — cheap and idempotent.
   if $IS_SAMSUNG; then
-    local err
-    err=$(pm disable-user --user 0 com.sec.android.app.launcher 2>&1) \
-      && log "Samsung launcher disabled" \
-      || log "Samsung launcher disable result: $err"
+    pm unhide --user 0 com.sec.android.app.launcher 2>/dev/null \
+      && log "Samsung launcher unhidden" || true
+    pm enable --user 0 com.sec.android.app.launcher 2>/dev/null \
+      && log "Samsung launcher enabled" || true
   fi
-  # AOSP / Pixel launchers — only if present
   for pkg in com.android.launcher3 com.google.android.apps.nexuslauncher; do
     pm list packages 2>/dev/null | grep -q "^package:${pkg}$" || continue
-    pm disable-user --user 0 "$pkg" 2>/dev/null \
-      && log "suppressed: $pkg" || true
+    pm enable --user 0 "$pkg" 2>/dev/null && log "re-enabled: $pkg" || true
   done
 }
 
 _plasma_set_home() {
-  _suppress_stock_launchers
+  # Plasma is set as the default HOME via role/activity below, same mechanism
+  # Android uses for any third-party launcher. The stock launcher is never
+  # disabled or hidden — both stay installed and the user can switch between
+  # them normally via Settings > Apps > Default apps > Home app.
+  _repair_oneui_home
 
   local err
 
