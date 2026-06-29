@@ -59,6 +59,14 @@ fdroid_url() {
 
 sp() { settings put --user 0 "$1" "$2" "$3" 2>/dev/null || settings put "$1" "$2" "$3" 2>/dev/null; }
 
+# `pm install` has been observed to hang indefinitely on this device instead
+# of failing outright, which silently kills the rest of this script (no log
+# copy ever reaches /sdcard/Download). Wrap every pm install call below in
+# `timeout` so a hang turns into a clear, logged failure instead.
+PM_TIMEOUT=""
+command -v timeout >/dev/null 2>&1 && PM_TIMEOUT="timeout 30"
+log "pm install timeout guard: ${PM_TIMEOUT:-NONE (timeout binary not found)}"
+
 # ── Download missing fonts ────────────────────────────────────────────────────
 mkdir -p "$FONTS_DIR"
 FONT_BASE="https://github.com/notofonts/noto-fonts/raw/main/hinted/ttf/NotoSans"
@@ -98,8 +106,15 @@ install_fdroid_app() {
   local url apk_tmp="/data/local/tmp/${pkg}.apk"
   url=$(fdroid_url "$pkg") || { log "$label: F-Droid API failed"; return 1; }
   try_dl "$url" "$apk_tmp" || { log "$label: download failed"; return 1; }
-  local err; err=$(pm install -r "$apk_tmp" 2>&1) \
-    && log "$label: installed" || log "$label: install FAILED — $err"
+  local err; err=$($PM_TIMEOUT pm install -r "$apk_tmp" 2>&1)
+  local rc=$?
+  if [ $rc -eq 0 ]; then
+    log "$label: installed"
+  elif [ $rc -eq 124 ]; then
+    log "$label: install TIMED OUT (30s) — pm install hung"
+  else
+    log "$label: install FAILED (rc=$rc) — $err"
+  fi
   rm -f "$apk_tmp"
 }
 
@@ -181,7 +196,7 @@ _log_apk_state "/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk"
 _log_apk_state "$MODDIR/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk"
 
 _plasma_install() {
-  local apk err
+  local apk err rc
 
   for apk in \
     "/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk" \
@@ -204,9 +219,15 @@ _plasma_install() {
     # -r  allow reinstall over existing
     # -d  allow version downgrade (handles versionCode mismatches)
     # -g  grant all declared runtime permissions immediately
-    err=$(pm install -r -d -g --user 0 "$apk" 2>&1) \
-      && log "install OK from $apk" \
-      || log "install FAILED from $apk — $err"
+    err=$($PM_TIMEOUT pm install -r -d -g --user 0 "$apk" 2>&1)
+    rc=$?
+    if [ $rc -eq 0 ]; then
+      log "install OK from $apk"
+    elif [ $rc -eq 124 ]; then
+      log "install TIMED OUT (30s) from $apk — pm install hung"
+    else
+      log "install FAILED (rc=$rc) from $apk — $err"
+    fi
 
     settings put global verifier_verify_adb_installs 1 2>/dev/null
     settings put global package_verifier_enable       1 2>/dev/null
@@ -231,15 +252,18 @@ _plasma_update_if_present() {
     [ -f "$apk" ] || continue
     settings put global verifier_verify_adb_installs 0 2>/dev/null
     settings put global package_verifier_enable       0 2>/dev/null
-    err=$(pm install -r -g --user 0 "$apk" 2>&1)
+    err=$($PM_TIMEOUT pm install -r -g --user 0 "$apk" 2>&1)
     local rc=$?
     settings put global verifier_verify_adb_installs 1 2>/dev/null
     settings put global package_verifier_enable       1 2>/dev/null
     if [ $rc -eq 0 ]; then
       log "in-place update OK from $apk"
       return 0
+    elif [ $rc -eq 124 ]; then
+      log "in-place update TIMED OUT (30s) from $apk — pm install hung (will try full reinstall)"
+    else
+      log "in-place update FAILED (rc=$rc) from $apk — $err (will try full reinstall)"
     fi
-    log "in-place update FAILED from $apk — $err (will try full reinstall)"
     return 1
   done
   return 1
