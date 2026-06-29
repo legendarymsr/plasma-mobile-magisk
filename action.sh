@@ -85,6 +85,18 @@ if [ -f "$MODDIR/harden.sh" ]; then
   LOG="$ALOG" sh "$MODDIR/harden.sh" && log "+ hardening pass: ok" || log "  hardening pass: see $ALOG"
 fi
 
+# ── WebView JS debug log — see index.html's jlog()/window.onerror ──────────
+WVLOG=/data/local/tmp/plasma-webview.log
+log ""
+if [ -f "$WVLOG" ]; then
+  log "--- plasma-webview.log (open the app + tap gear/recents BEFORE re-running this) ---"
+  while IFS= read -r line; do log "  $line"; done < "$WVLOG"
+  log "--- end plasma-webview.log ---"
+else
+  log "plasma-webview.log: not found yet — open Plasma Mobile, tap the gear icon"
+  log "  and the app-switcher button, THEN tap this Action button again."
+fi
+
 log ""
 log "Full log: /sdcard/Download/plasma-theme.log"
 log "Note: this button no longer changes your default Home app."
