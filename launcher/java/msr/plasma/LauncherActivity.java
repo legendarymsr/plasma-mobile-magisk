@@ -514,20 +514,24 @@ public class LauncherActivity extends Activity {
 
         @JavascriptInterface
         public void openRecents() {
-            mMainHandler.post(new Runnable() {
+            // Dispatching KEYCODE_APP_SWITCH to the WebView never reaches the
+            // system Overview — WebView just swallows it silently (no
+            // exception), so the old try/catch fallback below it never ran.
+            // Triggering Overview from an arbitrary app's process requires
+            // INJECT_EVENTS, which this app doesn't (and shouldn't) hold —
+            // route it through the same root shell every other system-level
+            // action in this app already uses.
+            new Thread(new Runnable() {
                 public void run() {
-                    try {
-                        mWebView.dispatchKeyEvent(
-                            new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_APP_SWITCH));
-                        mWebView.dispatchKeyEvent(
-                            new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_APP_SWITCH));
-                    } catch (Exception ignored) {
+                    if (findSu() != null) {
+                        rootExec("input keyevent KEYCODE_APP_SWITCH");
+                    } else {
                         try {
                             Runtime.getRuntime().exec("input keyevent KEYCODE_APP_SWITCH");
-                        } catch (Exception e) {}
+                        } catch (Exception ignored) {}
                     }
                 }
-            });
+            }).start();
         }
 
         @JavascriptInterface
