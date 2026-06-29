@@ -298,6 +298,9 @@ _set_default_home() {
   log "  Settings → Apps → Default apps → Home app → Plasma Mobile"
 }
 
+log "BEFORE install — versionCode: $(dumpsys package ${PLASMA_PKG} 2>/dev/null | grep -m1 versionCode)"
+log "BEFORE install — codePath:    $(dumpsys package ${PLASMA_PKG} 2>/dev/null | grep -m1 codePath)"
+
 # ── Phase 1: install if absent, or update in place if a newer APK shipped ─────
 if pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
   log "pkg present — updating in place to pick up any APK changes"
@@ -306,6 +309,9 @@ else
   log "pkg absent — explicit install (Phase 1)"
   _plasma_install
 fi
+
+log "AFTER install — versionCode: $(dumpsys package ${PLASMA_PKG} 2>/dev/null | grep -m1 versionCode)"
+log "AFTER install — codePath:    $(dumpsys package ${PLASMA_PKG} 2>/dev/null | grep -m1 codePath)"
 
 # Wait up to 40 s for PM to finish scanning system apps
 k=0
