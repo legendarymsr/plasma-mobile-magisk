@@ -12,6 +12,15 @@ log() {
 
 log "--- Plasma Mobile Setup ---"
 
+# ── Diagnostics: what's on disk vs what's actually installed ─────────────────
+for apk in \
+  "/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk" \
+  "$MODDIR/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk"; do
+  [ -f "$apk" ] && log "  on disk: $apk ($(wc -c < "$apk" 2>/dev/null) bytes, $(date -r "$apk" '+%Y-%m-%d %H:%M:%S' 2>/dev/null))"
+done
+log "  installed versionCode: $(dumpsys package msr.plasma 2>/dev/null | grep -m1 versionCode)"
+log "  installed codePath:    $(dumpsys package msr.plasma 2>/dev/null | grep -m1 codePath)"
+
 # ── Install if absent, or update in place to pick up any APK changes ─────────
 for apk in \
   "/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk" \
@@ -26,6 +35,9 @@ for apk in \
   settings put global package_verifier_enable       1 2>/dev/null
   break
 done
+
+log "  AFTER install — versionCode: $(dumpsys package msr.plasma 2>/dev/null | grep -m1 versionCode)"
+log "  AFTER install — codePath:    $(dumpsys package msr.plasma 2>/dev/null | grep -m1 codePath)"
 
 # ── Repair Samsung One UI launcher ────────────────────────────────────────────
 # Earlier module versions ran `pm hide` on it, which also clears it from
