@@ -64,6 +64,11 @@ err=$(cmd uimode night yes 2>&1) \
 settings put global dark_theme 1 2>/dev/null || true
 settings put secure ui_night_mode 2 2>/dev/null || true
 
+# ── Hardening (every-boot subset only — see harden.sh for the full pass) ──────
+if [ -f "$MODDIR/harden.sh" ]; then
+  LOG="$ALOG" sh "$MODDIR/harden.sh" && log "+ hardening pass: ok" || log "  hardening pass: see $ALOG"
+fi
+
 log ""
 log "Full log: /sdcard/Download/plasma-theme.log"
 log "If launcher did not switch automatically:"

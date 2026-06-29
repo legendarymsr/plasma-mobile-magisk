@@ -306,6 +306,29 @@ if pm list packages 2>/dev/null | grep -q "org.kde.kdeconnect_tp"; then
     && log "KDE Connect started" || log "KDE Connect start FAILED"
 fi
 
+# ── Hardening ──────────────────────────────────────────────────────────────────
+if [ -f "$MODDIR/harden.sh" ]; then
+  sh "$MODDIR/harden.sh"
+else
+  log "harden.sh not found at $MODDIR — skipping hardening pass"
+fi
+
+# Auto-reboot watchdog — detached, long-running. Only start it if a prior
+# instance (by pid) isn't already alive; pidfile is stale after every real
+# reboot so this always restarts cleanly.
+WATCHDOG_PIDFILE=/data/local/tmp/plasma-watchdog.pid
+if [ -f "$MODDIR/watchdog-reboot.sh" ]; then
+  if [ -f "$WATCHDOG_PIDFILE" ] && kill -0 "$(cat "$WATCHDOG_PIDFILE" 2>/dev/null)" 2>/dev/null; then
+    log "watchdog-reboot already running (pid $(cat "$WATCHDOG_PIDFILE"))"
+  else
+    nohup sh "$MODDIR/watchdog-reboot.sh" >/dev/null 2>&1 &
+    echo $! > "$WATCHDOG_PIDFILE"
+    log "watchdog-reboot started (pid $!)"
+  fi
+else
+  log "watchdog-reboot.sh not found at $MODDIR — skipping"
+fi
+
 # ── Copy log to accessible location ──────────────────────────────────────────
 mkdir -p /sdcard/Download 2>/dev/null
 cp "$LOG" /sdcard/Download/plasma-theme.log 2>/dev/null && log "log → /sdcard/Download/"
