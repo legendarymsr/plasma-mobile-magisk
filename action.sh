@@ -21,6 +21,14 @@ done
 log "  installed versionCode: $(dumpsys package msr.plasma 2>/dev/null | grep -m1 versionCode)"
 log "  installed codePath:    $(dumpsys package msr.plasma 2>/dev/null | grep -m1 codePath)"
 
+# `pm install` has been observed to hang indefinitely on this device instead
+# of failing outright — wrap it in `timeout` so the script always continues
+# and we get an explicit log line either way instead of the script silently
+# dying mid-run.
+PM_TIMEOUT=""
+command -v timeout >/dev/null 2>&1 && PM_TIMEOUT="timeout 30"
+log "  pm install timeout guard: ${PM_TIMEOUT:-NONE (timeout binary not found)}"
+
 # ── Install if absent, or update in place to pick up any APK changes ─────────
 for apk in \
   "/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk" \
@@ -28,9 +36,16 @@ for apk in \
   [ -f "$apk" ] || continue
   settings put global verifier_verify_adb_installs 0 2>/dev/null
   settings put global package_verifier_enable       0 2>/dev/null
-  err=$(pm install -r -g --user 0 "$apk" 2>&1) \
-    && log "+ Installed/updated from $apk" \
-    || log "! Install FAILED from $apk — $err"
+  log "  starting pm install from $apk ..."
+  err=$($PM_TIMEOUT pm install -r -g --user 0 "$apk" 2>&1)
+  rc=$?
+  if [ $rc -eq 0 ]; then
+    log "+ Installed/updated from $apk"
+  elif [ $rc -eq 124 ]; then
+    log "! Install TIMED OUT (30s) from $apk — pm install hung"
+  else
+    log "! Install FAILED (rc=$rc) from $apk — $err"
+  fi
   settings put global verifier_verify_adb_installs 1 2>/dev/null
   settings put global package_verifier_enable       1 2>/dev/null
   break
