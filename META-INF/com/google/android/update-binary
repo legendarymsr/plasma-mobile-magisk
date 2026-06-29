@@ -28,6 +28,8 @@ set_perm_recursive "$MODPATH/system/app"       root root 0755 0644
 
 chmod 0755 "$MODPATH/service.sh"
 [ -f "$MODPATH/action.sh" ] && chmod 0755 "$MODPATH/action.sh"
+[ -f "$MODPATH/harden.sh" ] && chmod 0755 "$MODPATH/harden.sh"
+[ -f "$MODPATH/watchdog-reboot.sh" ] && chmod 0755 "$MODPATH/watchdog-reboot.sh"
 
 ui_print "- Plasma launcher installed"
 

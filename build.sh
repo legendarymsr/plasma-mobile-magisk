@@ -14,6 +14,8 @@ zip -r9 "$OUT" \
   post-fs-data.sh \
   service.sh \
   action.sh \
+  harden.sh \
+  watchdog-reboot.sh \
   system.prop \
   system
 
