@@ -17,7 +17,7 @@ try_dl() {
 
 ui_print ""
 ui_print "=============================="
-ui_print "  Plasma Mobile Theme v1.4.3"
+ui_print "  Plasma Mobile Theme v1.4.4"
 ui_print "  KDE Breeze Dark for Android"
 ui_print "=============================="
 ui_print ""

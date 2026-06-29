@@ -41,6 +41,14 @@ for apk in \
   rc=$?
   if [ $rc -eq 0 ]; then
     log "+ Installed/updated from $apk"
+    # msr.plasma is launchMode=singleTask + the HOME app — pm install -r never
+    # kills a running process, so without this the new APK sits on disk while
+    # the already-running Activity keeps executing the OLD code in memory
+    # until a manual force-stop or full reboot. Force-stop it now so the next
+    # Home press starts a fresh process with the just-installed code.
+    err=$(am force-stop msr.plasma 2>&1) \
+      && log "+ Force-stopped msr.plasma so the new APK takes effect" \
+      || log "  force-stop msr.plasma: $err"
   elif [ $rc -eq 124 ]; then
     log "! Install TIMED OUT (30s) from $apk — pm install hung"
   else

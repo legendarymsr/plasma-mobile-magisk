@@ -223,6 +223,7 @@ _plasma_install() {
     rc=$?
     if [ $rc -eq 0 ]; then
       log "install OK from $apk"
+      am force-stop "$PLASMA_PKG" 2>/dev/null
     elif [ $rc -eq 124 ]; then
       log "install TIMED OUT (30s) from $apk — pm install hung"
     else
@@ -258,6 +259,10 @@ _plasma_update_if_present() {
     settings put global package_verifier_enable       1 2>/dev/null
     if [ $rc -eq 0 ]; then
       log "in-place update OK from $apk"
+      # singleTask + HOME means a process already running keeps executing the
+      # OLD code from before this pm install -r, with no further trigger to
+      # restart it — force-stop so the next Home press starts fresh.
+      am force-stop "$PLASMA_PKG" 2>/dev/null
       return 0
     elif [ $rc -eq 124 ]; then
       log "in-place update TIMED OUT (30s) from $apk — pm install hung (will try full reinstall)"
