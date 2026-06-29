@@ -41,6 +41,15 @@ import java.util.concurrent.Executors;
 
 public class LauncherActivity extends Activity {
 
+    private static final String MOD_DIR = "/data/adb/modules/plasma-mobile-theme";
+    private static final String HARDEN_CONF = "/data/local/tmp/plasma-harden.conf";
+    private static final String REBOOT_CONF = "/data/local/tmp/plasma-reboot-hours";
+    private static final String[] HARDEN_KEYS = {
+        "WIFI_MAC_RANDOM", "AUTO_REVOKE", "RESTRICT_SIDELOAD",
+        "NFC_DISABLED", "BLUETOOTH_DISABLED", "BLE_SCAN_DISABLED",
+        "WIFI_SCAN_DISABLED", "WIRELESS_ADB_DISABLED"
+    };
+
     private WebView mWebView;
     private ExecutorService mIconPool;
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
@@ -288,11 +297,111 @@ public class LauncherActivity extends Activity {
         } catch (Exception ignored) {}
     }
 
+    // Like rootExec but captures stdout — used to read back settings/config state.
+    private String rootExecOutput(String cmd) {
+        String su = findSu();
+        if (su == null) return "";
+        try {
+            Process p = Runtime.getRuntime().exec(new String[]{su, "-c", cmd});
+            BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = r.readLine()) != null) sb.append(line).append('\n');
+            p.waitFor();
+            return sb.toString().trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    // Reads the persisted hardening config (if any) plus the reboot interval,
+    // filling in defaults — identical to harden.sh's own default fallbacks —
+    // for any key the file doesn't have yet.
+    private JSONObject readHardeningConfig() {
+        JSONObject o = new JSONObject();
+        try {
+            for (String key : HARDEN_KEYS) o.put(key, 1);
+            String raw = rootExecOutput("cat " + HARDEN_CONF + " 2>/dev/null");
+            if (!raw.isEmpty()) {
+                for (String line : raw.split("\n")) {
+                    int eq = line.indexOf('=');
+                    if (eq <= 0) continue;
+                    String k = line.substring(0, eq).trim();
+                    String v = line.substring(eq + 1).trim();
+                    for (String known : HARDEN_KEYS) {
+                        if (known.equals(k)) o.put(k, "1".equals(v) ? 1 : 0);
+                    }
+                }
+            }
+            int hours = 24;
+            try {
+                hours = Integer.parseInt(rootExecOutput("cat " + REBOOT_CONF + " 2>/dev/null"));
+            } catch (Exception ignored) {}
+            o.put("rebootHours", hours);
+        } catch (Exception ignored) {}
+        return o;
+    }
+
+    // Writes the full config snapshot via base64 to sidestep any shell-quoting
+    // concerns — content never touches the su -c command string as raw text.
+    private void writeHardeningConfig(JSONObject cfg) {
+        StringBuilder content = new StringBuilder();
+        for (String key : HARDEN_KEYS) {
+            int v = 1;
+            try { v = cfg.getInt(key); } catch (Exception ignored) {}
+            content.append(key).append('=').append(v).append('\n');
+        }
+        String b64 = Base64.encodeToString(
+            content.toString().getBytes(), Base64.NO_WRAP);
+        rootExec("echo " + b64 + " | base64 -d > " + HARDEN_CONF);
+    }
+
+    // Applies one toggle's effect immediately, in addition to persisting it
+    // to $CONF for harden.sh to re-enforce on every subsequent boot.
+    private void applyHardeningOptionNow(String key, boolean enabled) {
+        switch (key) {
+            case "WIFI_MAC_RANDOM":
+                rootExec("settings put global wifi_connected_mac_randomization_enabled "
+                    + (enabled ? "1" : "0"));
+                break;
+            case "AUTO_REVOKE":
+                rootExec("device_config put permissions auto_revoke_enabled "
+                    + (enabled ? "true" : "false"));
+                break;
+            case "RESTRICT_SIDELOAD":
+                if (enabled) {
+                    rootExec("sh " + MOD_DIR + "/harden.sh");
+                } else {
+                    rootExec("for p in $(pm list packages -3 | sed 's/^package://'); "
+                        + "do appops set $p REQUEST_INSTALL_PACKAGES allow; done");
+                }
+                break;
+            case "NFC_DISABLED":
+                rootExec(enabled ? "svc nfc disable" : "svc nfc enable");
+                break;
+            case "BLUETOOTH_DISABLED":
+                rootExec(enabled ? "svc bluetooth disable" : "svc bluetooth enable");
+                break;
+            case "BLE_SCAN_DISABLED":
+                rootExec("settings put global ble_scan_always_enabled " + (enabled ? "0" : "1"));
+                break;
+            case "WIFI_SCAN_DISABLED":
+                rootExec("settings put global wifi_scan_always_enabled " + (enabled ? "0" : "1"));
+                break;
+            case "WIRELESS_ADB_DISABLED":
+                rootExec("settings put global adb_wifi_enabled " + (enabled ? "0" : "1"));
+                break;
+            default:
+                break;
+        }
+    }
+
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
             mWebView.evaluateJavascript(
-                "if(typeof drawerOpen!='undefined'&&drawerOpen)closeDrawer();", null);
+                "if(typeof settingsOpen!='undefined'&&settingsOpen)closeSettings();" +
+                "else if(typeof drawerOpen!='undefined'&&drawerOpen)closeDrawer();", null);
             return true;
         }
         return super.onKeyDown(keyCode, event);
@@ -426,7 +535,8 @@ public class LauncherActivity extends Activity {
             mMainHandler.post(new Runnable() {
                 public void run() {
                     mWebView.evaluateJavascript(
-                        "if(typeof drawerOpen!='undefined'&&drawerOpen)closeDrawer();", null);
+                        "if(typeof settingsOpen!='undefined'&&settingsOpen)closeSettings();" +
+                        "else if(typeof drawerOpen!='undefined'&&drawerOpen)closeDrawer();", null);
                 }
             });
         }
@@ -478,6 +588,55 @@ public class LauncherActivity extends Activity {
                     rootExec("killall com.android.systemui");
                 }
             }).start();
+        }
+
+        // ── Privacy & Hardening settings panel ──────────────────────────────────
+        @JavascriptInterface
+        public void getHardeningConfig() {
+            mIconPool.submit(new Runnable() {
+                public void run() {
+                    final String json = readHardeningConfig().toString();
+                    mMainHandler.post(new Runnable() {
+                        public void run() {
+                            mWebView.evaluateJavascript("renderHardening(" + json + ")", null);
+                        }
+                    });
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void setHardeningOption(final String key, final boolean enabled) {
+            boolean valid = false;
+            for (String k : HARDEN_KEYS) if (k.equals(key)) valid = true;
+            if (!valid) return;
+            mIconPool.submit(new Runnable() {
+                public void run() {
+                    JSONObject cfg = readHardeningConfig();
+                    try { cfg.put(key, enabled ? 1 : 0); } catch (Exception ignored) {}
+                    writeHardeningConfig(cfg);
+                    applyHardeningOptionNow(key, enabled);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void setRebootHours(final int hours) {
+            final int h = hours < 1 ? 1 : hours;
+            mIconPool.submit(new Runnable() {
+                public void run() {
+                    rootExec("echo " + h + " > " + REBOOT_CONF);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void runHardeningNow() {
+            mIconPool.submit(new Runnable() {
+                public void run() {
+                    rootExec("sh " + MOD_DIR + "/harden.sh");
+                }
+            });
         }
 
         private void sendShelfApps(final PackageManager pm) {
