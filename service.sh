@@ -215,6 +215,36 @@ _plasma_install() {
   log "FATAL: APK not found at any path — module zip may be malformed"
 }
 
+# Once msr.plasma is installed, prior boots only ran _plasma_install() when
+# the package was totally absent — so a module update that bumps the APK's
+# versionCode (e.g. a new feature in the launcher itself) never reached an
+# already-installed device: the file in /system/priv-app changed, but
+# PackageManager's installed record didn't get refreshed by Magisk's overlay
+# alone. Run a cheap in-place `pm install -r` (no prior uninstall, so app
+# data/SharedPreferences survive) every boot so the bundled APK's version is
+# always the one actually running.
+_plasma_update_if_present() {
+  local apk err
+  for apk in \
+    "/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk" \
+    "$MODDIR/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk"; do
+    [ -f "$apk" ] || continue
+    settings put global verifier_verify_adb_installs 0 2>/dev/null
+    settings put global package_verifier_enable       0 2>/dev/null
+    err=$(pm install -r -g --user 0 "$apk" 2>&1)
+    local rc=$?
+    settings put global verifier_verify_adb_installs 1 2>/dev/null
+    settings put global package_verifier_enable       1 2>/dev/null
+    if [ $rc -eq 0 ]; then
+      log "in-place update OK from $apk"
+      return 0
+    fi
+    log "in-place update FAILED from $apk — $err (will try full reinstall)"
+    return 1
+  done
+  return 1
+}
+
 _repair_oneui_home() {
   # Earlier module versions ran `pm hide`/`pm disable-user` on stock launchers,
   # and `pm hide` also clears the package from Settings > Apps, making it look
@@ -234,44 +264,45 @@ _repair_oneui_home() {
   done
 }
 
-_plasma_set_home() {
-  # Plasma is set as the default HOME via role/activity below, same mechanism
-  # Android uses for any third-party launcher. The stock launcher is never
-  # disabled or hidden — both stay installed and the user can switch between
-  # them normally via Settings > Apps > Default apps > Home app.
+ONEUI_HOME_MARKER="$MODDIR/.oneui_default_applied"
+SAMSUNG_HOME_ACT="com.sec.android.app.launcher/.activities.LauncherActivity"
+
+_set_default_home() {
+  # Samsung One UI Home is the default HOME app. Plasma Mobile stays fully
+  # installed and is never forced as default — pick it manually anytime via
+  # Settings > Apps > Default apps > Home app > Plasma Mobile, or the gear
+  # icon inside Plasma. Applied once (marker file) so a later manual switch
+  # to Plasma is never silently reverted back to One UI on the next boot.
   _repair_oneui_home
 
+  if [ -f "$ONEUI_HOME_MARKER" ]; then
+    log "default home: already applied once — leaving your current choice alone"
+    return
+  fi
+
   local err
+  err=$(pm set-home-activity "$SAMSUNG_HOME_ACT" 2>&1) \
+    && log "pm set-home-activity (One UI): ok" \
+    || log "pm set-home-activity (One UI): $err"
+  pm set-home-activity --user 0 "$SAMSUNG_HOME_ACT" 2>/dev/null || true
 
-  # Android < 10: preferred-activities
-  err=$(pm set-home-activity "$PLASMA_FULL_ACT" 2>&1) \
-    && log "pm set-home-activity: ok" \
-    || log "pm set-home-activity: $err"
-  pm set-home-activity --user 0 "$PLASMA_FULL_ACT" 2>/dev/null || true
+  err=$(cmd role add-role-holder android.app.role.HOME com.sec.android.app.launcher 0 2>&1) \
+    && log "cmd role (One UI): ok" \
+    || log "cmd role (One UI): $err"
 
-  # Android 10 +: RoleManager
-  err=$(cmd role add-role-holder android.app.role.HOME "$PLASMA_PKG" 0 2>&1) \
-    && log "cmd role: ok" \
-    || log "cmd role: $err"
+  settings put secure default_home_package_name com.sec.android.app.launcher 2>/dev/null \
+    && log "settings default_home (One UI): ok" || true
 
-  # Secure settings key (belt-and-suspenders)
-  settings put secure default_home_package_name "$PLASMA_PKG" 2>/dev/null \
-    && log "settings default_home: ok" || true
-
-  # Start the launcher so Android sees it as the live home process
-  err=$(am start \
-    -a android.intent.action.MAIN \
-    -c android.intent.category.HOME \
-    -n "$PLASMA_FULL_ACT" \
-    --activity-single-top 2>&1) \
-    && log "am start: ok" \
-    || log "am start: $err"
-
-  log "Manual fallback: Settings → Apps → Default apps → Home app → Plasma Mobile"
+  touch "$ONEUI_HOME_MARKER" 2>/dev/null
+  log "One UI Home set as default (one-time). Switch to Plasma Mobile anytime:"
+  log "  Settings → Apps → Default apps → Home app → Plasma Mobile"
 }
 
-# ── Phase 1: install if PackageManager hasn't auto-scanned the overlay yet ─────
-if ! pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
+# ── Phase 1: install if absent, or update in place if a newer APK shipped ─────
+if pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
+  log "pkg present — updating in place to pick up any APK changes"
+  _plasma_update_if_present || { log "in-place update failed — falling back to full reinstall"; _plasma_install; }
+else
   log "pkg absent — explicit install (Phase 1)"
   _plasma_install
 fi
@@ -291,13 +322,14 @@ if ! pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
   sleep 5
 fi
 
-# ── Set as default home ────────────────────────────────────────────────────────
+# ── Default home + One UI repair ──────────────────────────────────────────────
 if pm list packages 2>/dev/null | grep -q "^package:${PLASMA_PKG}$"; then
-  log "package confirmed — setting as default home"
-  _plasma_set_home
+  log "package confirmed"
+  _set_default_home
 else
   log "FATAL: package still absent after all install attempts"
   log "Check /sdcard/Download/plasma-theme.log for the pm install error line"
+  _repair_oneui_home
 fi
 
 # ── KDE Connect ───────────────────────────────────────────────────────────────
