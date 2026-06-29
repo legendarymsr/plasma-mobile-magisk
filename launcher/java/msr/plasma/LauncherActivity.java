@@ -415,6 +415,25 @@ public class LauncherActivity extends Activity {
 
     private class PlasmaJS {
 
+        // Lets index.html report JS errors and key UI-tap events to a file we
+        // can read back without needing adb/logcat — every prior round of
+        // debugging this device had no visibility into whether a tap reached
+        // the WebView's JS at all, or reached it and failed silently inside.
+        @JavascriptInterface
+        public void logJs(final String msg) {
+            mIconPool.submit(new Runnable() {
+                public void run() {
+                    try {
+                        new File("/data/local/tmp").mkdirs();
+                        PrintWriter w = new PrintWriter(
+                            new FileWriter("/data/local/tmp/plasma-webview.log", true));
+                        w.println("[" + System.currentTimeMillis() + "] " + msg);
+                        w.close();
+                    } catch (Exception ignored) {}
+                }
+            });
+        }
+
         @JavascriptInterface
         public void requestApps() {
             final PackageManager pm = getPackageManager();
