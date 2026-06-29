@@ -1,14 +1,16 @@
 #!/sbin/sh
 # post-fs-data.sh
 # Runs after /data is mounted but BEFORE system_server starts.
-# Three jobs:
+# Two jobs:
 #   1. Fix APK ownership/permissions/SELinux so PackageManager accepts it.
 #   2. Scrub any stale cert record from packages.xml so PM does a fresh install.
-#   3. Patch roles.xml so RoleManagerService sets Plasma as HOME on first read.
+# Does NOT touch roles.xml / the HOME role — service.sh owns default-home
+# logic (one-time restore of Samsung One UI Home, never re-forced after that),
+# and this script used to fight it by re-injecting Plasma as HOME on every
+# boot before service.sh ever got a chance to run.
 
 PKG="msr.plasma"
 APK="/system/priv-app/PlasmaLauncher/PlasmaLauncher.apk"
-ROLES="/data/system/roles.xml"
 PKG_XML="/data/system/packages.xml"
 LOG="/data/local/tmp/plasma-pfd.log"
 
@@ -67,36 +69,6 @@ sys.exit(1)
 PYEOF
 else
     plog "no stale cert record in packages.xml"
-fi
-
-# ── 3. Patch roles.xml so RoleManagerService starts with Plasma as HOME ────────
-# RoleManagerService reads this file once during early framework init, after
-# PackageManager has finished scanning (and thus after our APK is installed).
-if [ ! -f "$ROLES" ]; then
-    plog "roles.xml absent (new device / first boot) — service.sh will handle"
-else
-    awk -v pkg="$PKG" '
-    BEGIN { in_home=0; needs_role=1 }
-    /<role name="android.app.role.HOME">/ {
-        in_home=1; needs_role=0; print; next
-    }
-    in_home && /<holder / { next }
-    in_home && /<\/role>/ {
-        print "        <holder name=\"" pkg "\" />"
-        in_home=0
-    }
-    /<\/roles>/ {
-        if (needs_role) {
-            print "    <role name=\"android.app.role.HOME\">"
-            print "        <holder name=\"" pkg "\" />"
-            print "    </role>"
-        }
-    }
-    { print }
-    ' "$ROLES" > "${ROLES}.tmp" 2>/dev/null \
-        && mv "${ROLES}.tmp" "$ROLES" 2>/dev/null \
-        && plog "roles.xml patched" \
-        || plog "roles.xml patch FAILED"
 fi
 
 plog "=== done ==="
