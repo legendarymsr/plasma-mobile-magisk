@@ -114,6 +114,26 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-sy
       </div>
     </div>
 
+    <!-- ── MICROSOFT ───────────────────────────────── -->
+    <div class="section">
+      <div class="section-title">Microsoft</div>
+      <div class="card" id="sec-microsoft">
+      </div>
+      <div class="section-btn-wrap">
+        <div class="section-btn" id="btn-all-microsoft" onclick="disableSection('microsoft')">Remove All Microsoft Apps</div>
+      </div>
+    </div>
+
+    <!-- ── META / FACEBOOK ──────────────────────────── -->
+    <div class="section">
+      <div class="section-title">Meta / Facebook</div>
+      <div class="card" id="sec-meta">
+      </div>
+      <div class="section-btn-wrap">
+        <div class="section-btn" id="btn-all-meta" onclick="disableSection('meta')">Remove All Meta Apps</div>
+      </div>
+    </div>
+
     <!-- ── PRIVACY HARDENING ──────────────────────── -->
     <div class="section">
       <div class="section-title">Privacy Hardening</div>
@@ -188,6 +208,18 @@ var GOOGLE = [
   {pkg:'com.google.android.gms',             label:'Play Services',     desc:'Core Google services — breaks all Google apps if removed'},
 ];
 
+var MICROSOFT = [
+  {pkg:'com.microsoft.skydrive',             label:'OneDrive',          desc:'Microsoft cloud storage'},
+];
+
+var META = [
+  {pkg:'com.facebook.katana',                label:'Facebook',          desc:'Facebook main app'},
+  {pkg:'com.facebook.orca',                  label:'Messenger',         desc:'Facebook Messenger'},
+  {pkg:'com.facebook.appmanager',            label:'FB App Manager',    desc:'Background Facebook app installer service'},
+  {pkg:'com.facebook.services',              label:'FB Services',       desc:'Facebook background services'},
+  {pkg:'com.facebook.system',                label:'FB System Service',  desc:'Facebook system-level persistent service'},
+];
+
 var HARDENING_META = [
   {key:'WIFI_MAC_RANDOM',   label:'WiFi MAC randomisation', desc:'Randomise MAC address per network to prevent tracking.'},
   {key:'AUTO_REVOKE',       label:'Permission auto-revoke', desc:'Android revokes permissions from apps you haven\'t opened in months.'},
@@ -198,6 +230,13 @@ var HARDENING_META = [
   {key:'WIFI_SCAN_DISABLED',label:'WiFi always-scan off',  desc:'Prevent WiFi scanning while WiFi is off.'},
   {key:'WIRELESS_ADB_DISABLED',label:'Wireless ADB off',   desc:'Disable ADB over WiFi.'},
 ];
+
+var SECTIONS = {
+  samsung:   {items: SAMSUNG,   label: 'Remove All Samsung Bloat'},
+  google:    {items: GOOGLE,    label: 'Remove All Google Apps'},
+  microsoft: {items: MICROSOFT, label: 'Remove All Microsoft Apps'},
+  meta:      {items: META,      label: 'Remove All Meta Apps'},
+};
 
 // ── State ─────────────────────────────────────────────────────────────────────
 var statuses = {};   // pkg → "installed"|"removed"|"missing"
@@ -231,9 +270,12 @@ function init(){
 
   renderSection('sec-samsung', SAMSUNG);
   renderSection('sec-google', GOOGLE);
+  renderSection('sec-microsoft', MICROSOFT);
+  renderSection('sec-meta', META);
 
   // Load all statuses in one synchronous call
-  var allPkgs = SAMSUNG.concat(GOOGLE).map(function(x){return x.pkg;}).join(',');
+  var allItems = SAMSUNG.concat(GOOGLE).concat(MICROSOFT).concat(META);
+  var allPkgs = allItems.map(function(x){return x.pkg;}).join(',');
   var raw = A.pkgStatuses(allPkgs);
   try {
     var obj = JSON.parse(raw);
@@ -241,7 +283,7 @@ function init(){
   } catch(e) { jlog('pkgStatuses parse error: '+e); }
 
   // Update every row
-  SAMSUNG.concat(GOOGLE).forEach(function(item){
+  allItems.forEach(function(item){
     updateRow(item.pkg, statuses[item.pkg]||'missing');
   });
 
@@ -319,8 +361,9 @@ function onPkg(pkg, status){
 
 // ── Disable entire section ────────────────────────────────────────────────────
 function disableSection(which){
-  var items = which==='samsung' ? SAMSUNG : GOOGLE;
-  var toDisable = items.filter(function(x){ return statuses[x.pkg]==='installed'; });
+  var sec = SECTIONS[which];
+  if(!sec) return;
+  var toDisable = sec.items.filter(function(x){ return statuses[x.pkg]==='installed'; });
   if(!toDisable.length){ setStatus('Nothing left to remove in this section.'); return; }
 
   var btnId = 'btn-all-' + which;
@@ -347,8 +390,8 @@ function onBatch(csv){
   var btns = document.querySelectorAll('.section-btn');
   for(var i=0;i<btns.length;i++){
     btns[i].classList.remove('working');
-    btns[i].textContent = btns[i].id.indexOf('samsung')>=0
-      ? 'Remove All Samsung Bloat' : 'Remove All Google Apps';
+    var key = btns[i].id.replace('btn-all-','');
+    if(SECTIONS[key]) btns[i].textContent = SECTIONS[key].label;
   }
   setStatus('Batch remove complete — ' + pkgs.length + ' apps.');
 }
