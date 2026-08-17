@@ -1,7 +1,7 @@
 id=privacy-hardening
 name=Privacy & Degoogle
-version=v1.5.3
-versionCode=35
+version=v1.5.4
+versionCode=36
 author=legendarymsr
 description=De-Google and De-Samsung your Z Flip 4 with button presses. Standalone settings app — no launcher replacement.
 updateJson=https://raw.githubusercontent.com/legendarymsr/plasma-mobile-magisk/master/update.json

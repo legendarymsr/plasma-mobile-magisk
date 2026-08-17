@@ -134,6 +134,16 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-sy
       </div>
     </div>
 
+    <!-- ── OTHER BLOAT ─────────────────────────────── -->
+    <div class="section">
+      <div class="section-title">Other Bloat</div>
+      <div class="card" id="sec-other">
+      </div>
+      <div class="section-btn-wrap">
+        <div class="section-btn" id="btn-all-other" onclick="disableSection('other')">Remove All Other Bloat</div>
+      </div>
+    </div>
+
     <!-- ── PRIVACY HARDENING ──────────────────────── -->
     <div class="section">
       <div class="section-title">Privacy Hardening</div>
@@ -190,6 +200,11 @@ var SAMSUNG = [
   {pkg:'com.samsung.android.messaging',     label:'Samsung Messages',  desc:'Samsung\'s default SMS/MMS app'},
   {pkg:'com.samsung.android.app.tips',      label:'Samsung Tips',      desc:'Tutorial and tips app'},
   {pkg:'com.sec.android.easyMover',         label:'Smart Switch',      desc:'Device migration tool'},
+  {pkg:'com.sec.android.app.sbrowser',      label:'Samsung Internet',  desc:'Samsung\'s browser with ad tracking'},
+  {pkg:'com.samsung.android.voc',           label:'Samsung Members',   desc:'Samsung feedback and community app'},
+  {pkg:'com.sec.android.app.music',         label:'Samsung Music',     desc:'Samsung\'s music player'},
+  {pkg:'com.samsung.android.themestore',    label:'Galaxy Themes',     desc:'Theme download store'},
+  {pkg:'com.samsung.android.app.watchmanager',label:'Galaxy Wearable', desc:'Galaxy Watch companion app'},
 ];
 
 var GOOGLE = [
@@ -210,6 +225,9 @@ var GOOGLE = [
 
 var MICROSOFT = [
   {pkg:'com.microsoft.skydrive',             label:'OneDrive',          desc:'Microsoft cloud storage'},
+  {pkg:'com.microsoft.emmx',                 label:'Microsoft Edge',    desc:'Microsoft\'s browser'},
+  {pkg:'com.microsoft.appmanager',           label:'Link to Windows',   desc:'Phone Link / Link to Windows companion'},
+  {pkg:'com.microsoft.teams',                label:'Microsoft Teams',   desc:'Microsoft Teams communication app'},
 ];
 
 var META = [
@@ -218,6 +236,17 @@ var META = [
   {pkg:'com.facebook.appmanager',            label:'FB App Manager',    desc:'Background Facebook app installer service'},
   {pkg:'com.facebook.services',              label:'FB Services',       desc:'Facebook background services'},
   {pkg:'com.facebook.system',                label:'FB System Service',  desc:'Facebook system-level persistent service'},
+];
+
+var OTHER = [
+  {pkg:'com.zhiliaoapp.musically',           label:'TikTok',            desc:'ByteDance short-video app with extensive data harvesting'},
+  {pkg:'com.linkedin.android',               label:'LinkedIn',          desc:'Microsoft-owned professional network'},
+  {pkg:'com.netflix.mediaclient',            label:'Netflix',           desc:'Netflix streaming app'},
+  {pkg:'com.spotify.music',                  label:'Spotify',           desc:'Spotify music streaming app'},
+  {pkg:'com.amazon.mShop.android.shopping',  label:'Amazon Shopping',   desc:'Amazon shopping app'},
+  {pkg:'com.microsoft.office.outlook',       label:'Outlook',           desc:'Microsoft email client'},
+  {pkg:'com.microsoft.office.word',          label:'Microsoft Word',    desc:'Microsoft Word mobile'},
+  {pkg:'com.microsoft.office.excel',         label:'Microsoft Excel',   desc:'Microsoft Excel mobile'},
 ];
 
 var HARDENING_META = [
@@ -236,6 +265,7 @@ var SECTIONS = {
   google:    {items: GOOGLE,    label: 'Remove All Google Apps'},
   microsoft: {items: MICROSOFT, label: 'Remove All Microsoft Apps'},
   meta:      {items: META,      label: 'Remove All Meta Apps'},
+  other:     {items: OTHER,     label: 'Remove All Other Bloat'},
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -272,9 +302,10 @@ function init(){
   renderSection('sec-google', GOOGLE);
   renderSection('sec-microsoft', MICROSOFT);
   renderSection('sec-meta', META);
+  renderSection('sec-other', OTHER);
 
   // Load all statuses in one synchronous call
-  var allItems = SAMSUNG.concat(GOOGLE).concat(MICROSOFT).concat(META);
+  var allItems = SAMSUNG.concat(GOOGLE).concat(MICROSOFT).concat(META).concat(OTHER);
   var allPkgs = allItems.map(function(x){return x.pkg;}).join(',');
   var raw = A.pkgStatuses(allPkgs);
   try {
