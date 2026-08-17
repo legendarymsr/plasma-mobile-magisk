@@ -85,10 +85,10 @@ jobs:
             --min-sdk-version 21 \
             --v1-signing-enabled true \
             --v2-signing-enabled true \
-            --out system/priv-app/PlasmaLauncher/PlasmaLauncher.apk \
+            --out system/priv-app/PrivacySettings/PrivacySettings.apk \
             /tmp/plasma-aligned.apk
 
-          echo "APK built from source: $(ls -lh system/priv-app/PlasmaLauncher/PlasmaLauncher.apk)"
+          echo "APK built from source: $(ls -lh system/priv-app/PrivacySettings/PrivacySettings.apk)"
 
       - name: Build module zip
         run: bash build.sh
