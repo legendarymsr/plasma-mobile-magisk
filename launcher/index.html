@@ -100,7 +100,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-sy
         <!-- rows injected by JS -->
       </div>
       <div class="section-btn-wrap">
-        <div class="section-btn" id="btn-all-samsung" onclick="disableSection('samsung')">Disable All Samsung Bloat</div>
+        <div class="section-btn" id="btn-all-samsung" onclick="disableSection('samsung')">Remove All Samsung Bloat</div>
       </div>
     </div>
 
@@ -110,7 +110,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:system-ui,-apple-sy
       <div class="card" id="sec-google">
       </div>
       <div class="section-btn-wrap">
-        <div class="section-btn" id="btn-all-google" onclick="disableSection('google')">Disable All Google Apps</div>
+        <div class="section-btn" id="btn-all-google" onclick="disableSection('google')">Remove All Google Apps</div>
       </div>
     </div>
 
@@ -193,7 +193,7 @@ var HARDENING_META = [
 ];
 
 // ── State ─────────────────────────────────────────────────────────────────────
-var statuses = {};   // pkg → "enabled"|"disabled"|"missing"
+var statuses = {};   // pkg → "installed"|"removed"|"missing"
 var A = null;        // Android bridge
 
 function jlog(m) { try { if(A&&A.log) A.log(String(m)); } catch(e){} }
@@ -219,7 +219,7 @@ function init(){
     badge.classList.remove('no-root');
   } else {
     badge.textContent = 'No Root';
-    setStatus('Warning: su not found — package disabling will fail');
+    setStatus('Warning: su not found — package removal will fail');
   }
 
   renderSection('sec-samsung', SAMSUNG);
@@ -273,15 +273,15 @@ function updateRow(pkg, status){
   pill.className = 'pill';
   btn.className  = 'btn';
 
-  if(status === 'enabled'){
-    pill.textContent = 'Running';
+  if(status === 'installed'){
+    pill.textContent = 'Installed';
     pill.classList.add('pill-on');
-    btn.textContent  = 'Disable';
+    btn.textContent  = 'Remove';
     btn.classList.add('btn-disable');
-  } else if(status === 'disabled'){
-    pill.textContent = 'Disabled';
+  } else if(status === 'removed'){
+    pill.textContent = 'Removed';
     pill.classList.add('pill-off');
-    btn.textContent  = 'Re-enable';
+    btn.textContent  = 'Restore';
     btn.classList.add('btn-enable');
   } else {
     pill.textContent = 'N/A';
@@ -294,11 +294,11 @@ function updateRow(pkg, status){
 function togglePkg(pkg){
   var current = statuses[pkg];
   if(!current || current==='missing') return;
-  var enabling = (current === 'disabled');
+  var enabling = (current === 'removed');
   var id = safe(pkg);
   var pill = document.getElementById('pill-'+id);
   var btn  = document.getElementById('btn-'+id);
-  if(pill){ pill.textContent = enabling?'Enabling…':'Disabling…'; pill.className='pill pill-loading'; }
+  if(pill){ pill.textContent = enabling?'Restoring…':'Removing…'; pill.className='pill pill-loading'; }
   if(btn)  btn.style.opacity = '.4';
   A.setPkg(pkg, enabling);
 }
@@ -306,15 +306,15 @@ function togglePkg(pkg){
 // Called by Java when one package status changes
 function onPkg(pkg, status){
   updateRow(pkg, status);
-  var label = (statuses[pkg]==='disabled') ? 'Disabled' : 'Re-enabled';
+  var label = (statuses[pkg]==='removed') ? 'Removed' : 'Restored';
   setStatus(label + ': ' + pkg.split('.').pop());
 }
 
 // ── Disable entire section ────────────────────────────────────────────────────
 function disableSection(which){
   var items = which==='samsung' ? SAMSUNG : GOOGLE;
-  var toDisable = items.filter(function(x){ return statuses[x.pkg]==='enabled'; });
-  if(!toDisable.length){ setStatus('Nothing left to disable in this section.'); return; }
+  var toDisable = items.filter(function(x){ return statuses[x.pkg]==='installed'; });
+  if(!toDisable.length){ setStatus('Nothing left to remove in this section.'); return; }
 
   var btnId = 'btn-all-' + which;
   var secBtn = document.getElementById(btnId);
@@ -334,16 +334,16 @@ function onBatch(csv){
   var pkgs = csv.split(',');
   pkgs.forEach(function(pkg){
     pkg = pkg.trim();
-    if(pkg) { statuses[pkg]='disabled'; updateRow(pkg,'disabled'); }
+    if(pkg) { statuses[pkg]='removed'; updateRow(pkg,'removed'); }
   });
   // Re-enable section buttons
   var btns = document.querySelectorAll('.section-btn');
   for(var i=0;i<btns.length;i++){
     btns[i].classList.remove('working');
     btns[i].textContent = btns[i].id.indexOf('samsung')>=0
-      ? 'Disable All Samsung Bloat' : 'Disable All Google Apps';
+      ? 'Remove All Samsung Bloat' : 'Remove All Google Apps';
   }
-  setStatus('Batch disable complete — ' + pkgs.length + ' apps.');
+  setStatus('Batch remove complete — ' + pkgs.length + ' apps.');
 }
 
 // ── Hardening ─────────────────────────────────────────────────────────────────
