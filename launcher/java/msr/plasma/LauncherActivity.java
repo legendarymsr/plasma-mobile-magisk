@@ -135,13 +135,18 @@ public class LauncherActivity extends Activity {
             }});
         }
 
-        // Returns "enabled", "disabled", or "missing" for a single package.
+        // Returns "installed", "removed" (per-user uninstalled), or "missing" (not on device).
         @JavascriptInterface
         public String pkgStatus(String pkg) {
             try {
-                ApplicationInfo ai = getPackageManager().getApplicationInfo(pkg, 0);
-                return ai.enabled ? "enabled" : "disabled";
-            } catch (PackageManager.NameNotFoundException e) { return "missing"; }
+                getPackageManager().getApplicationInfo(pkg, 0);
+                return "installed";
+            } catch (PackageManager.NameNotFoundException e) {
+                try {
+                    getPackageManager().getApplicationInfo(pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES);
+                    return "removed";
+                } catch (PackageManager.NameNotFoundException e2) { return "missing"; }
+            }
         }
 
         // Takes comma-separated package names, returns JSON map pkg→status.
@@ -159,11 +164,11 @@ public class LauncherActivity extends Activity {
             return sb.append('}').toString();
         }
 
-        // Disable or enable one package, then calls back onPkg(pkg, newStatus).
+        // Remove or restore one package, then calls back onPkg(pkg, newStatus).
         @JavascriptInterface
         public void setPkg(final String pkg, final boolean enable) {
             mPool.submit(new Runnable() { public void run() {
-                rootExec((enable ? "pm enable --user 0 " : "pm disable-user --user 0 ") + pkg);
+                rootExec((enable ? "pm install-existing --user 0 " : "pm uninstall --user 0 ") + pkg);
                 final String st = pkgStatus(pkg);
                 mMain.post(new Runnable() { public void run() {
                     mWebView.evaluateJavascript("onPkg('" + pkg + "','" + st + "')", null);
@@ -171,13 +176,13 @@ public class LauncherActivity extends Activity {
             }});
         }
 
-        // Disable all packages in comma-separated list, then calls back onBatch(csv).
+        // Remove all packages in comma-separated list, then calls back onBatch(csv).
         @JavascriptInterface
         public void disableAll(final String csv) {
             mPool.submit(new Runnable() { public void run() {
                 for (String pkg : csv.split(",")) {
                     pkg = pkg.trim();
-                    if (!pkg.isEmpty()) rootExec("pm disable-user --user 0 " + pkg);
+                    if (!pkg.isEmpty()) rootExec("pm uninstall --user 0 " + pkg);
                 }
                 final String done = csv;
                 mMain.post(new Runnable() { public void run() {
